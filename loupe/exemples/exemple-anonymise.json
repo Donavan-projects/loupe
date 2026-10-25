@@ -1,0 +1,185 @@
+{
+  "date": "12/10/2026",
+  "url": "https://www.example.com/",
+  "analyse": {
+    "entreprise": "Entreprise A",
+    "synthese": "Entreprise A met en relation des acheteurs d’appareils reconditionnés avec des reconditionneurs professionnels et propose des services de reprise, de réparation et de remplacement. L’offre s’adresse aux particuliers, avec une entrée dédiée aux entreprises. L’opportunité principale consiste à rendre les caractéristiques de chaque appareil plus concrètes et à réutiliser les données de commande pour simplifier sa revente.",
+    "proposition_de_valeur": "Acheter des appareils reconditionnés présentés comme moins chers et aussi performants que le neuf, avec des contrôles qualité et des garanties rassurantes. La reprise et la réparation permettent également de prolonger leur utilisation.",
+    "marche": {
+      "segment": "Commerce en ligne d’appareils électroniques et électroménagers reconditionnés, reprise et services associés.",
+      "cible": "Particuliers souhaitant acheter, revendre ou faire réparer un appareil ; acheteurs professionnels via une offre dédiée dont les métiers précis sont non déterminés.",
+      "positionnement": "Une alternative au neuf fondée sur un budget maîtrisé, une qualité vérifiée et une utilisation plus durable de la technologie.",
+      "differenciation": "Des reconditionneurs sélectionnés et contrôlés en continu, plusieurs dizaines de points de contrôle, un seuil annoncé de santé de batterie et des services de reprise, de réparation et de remplacement.",
+      "modele_economique": "Plateforme de vente réunissant des reconditionneurs professionnels et proposant des services associés ; modalités de rémunération non déterminées.",
+      "contexte_marche": "Le reconditionné répond à des attentes de maîtrise du budget et de prolongation de la durée d’usage des appareils. Les acheteurs accordent une attention particulière à la batterie, à l’état réel du produit et aux conditions après-vente. Les plateformes, les vendeurs spécialisés et les programmes de reprise constituent plusieurs voies d’accès à ce marché."
+    },
+    "points_forts": [
+      {
+        "constat": "La charte qualité associe sélection continue des reconditionneurs, contrôles techniques et seuil explicite de santé de batterie, donnant des repères concrets aux acheteurs.",
+        "source": "https://www.example.com/qualite"
+      },
+      {
+        "constat": "La garantie commerciale de 12 mois et le retour gratuit sous 30 jours sécurisent l’achat, tandis que la réparation et le remplacement rapide accompagnent l’utilisation.",
+        "source": "https://www.example.com/qualite"
+      },
+      {
+        "constat": "La reprise couvre plusieurs familles d’appareils, y compris hors service, avec une offre de professionnels, un envoi gratuit et assuré et un paiement par virement.",
+        "source": "https://www.example.com/reprise"
+      }
+    ],
+    "inventaire_existant": [
+      {
+        "element": "Vente d’appareils reconditionnés (catégories : smartphones, ordinateurs, tablettes, audio, électroménager)",
+        "citation": "Catégories",
+        "source": "https://www.example.com/"
+      },
+      {
+        "element": "Charte qualité : garantie commerciale de 12 mois",
+        "citation": "Garantie commerciale de 12 mois",
+        "source": "https://www.example.com/qualite"
+      },
+      {
+        "element": "Retour gratuit sous 30 jours",
+        "citation": "Retour gratuit sous 30 jours",
+        "source": "https://www.example.com/qualite"
+      },
+      {
+        "element": "Plusieurs dizaines de points de contrôle rigoureux",
+        "citation": "Plusieurs dizaines de points de contrôle rigoureux",
+        "source": "https://www.example.com/qualite"
+      },
+      {
+        "element": "Service de reprise / revente d’appareils (reprise)",
+        "citation": "Revendez votre ancien appareil",
+        "source": "https://www.example.com/reprise"
+      },
+      {
+        "element": "Processus de reprise en 3 étapes : offre, expédition gratuite, virement",
+        "citation": "Obtenez une offre\nExpédiez l’appareil gratuitement\nRecevez votre argent",
+        "source": "https://www.example.com/reprise"
+      },
+      {
+        "element": "Remplacement rapide (envoyer un autre appareil sans frais)",
+        "citation": "Remplacement rapide",
+        "source": "https://www.example.com/qualite"
+      },
+      {
+        "element": "Réparation à la demande : réparation en 3 jours",
+        "citation": "Réparation en 3 jours. Peu importe où vous avez acheté votre appareil.",
+        "source": "https://www.example.com/qualite"
+      },
+      {
+        "element": "Centre d’assistance / FAQ avec contact sous 24 h",
+        "citation": "On vous répond sous 24 h, week-end compris",
+        "source": "https://www.example.com/aide"
+      },
+      {
+        "element": "Comparateur de produits et avis clients",
+        "citation": "Comparer nos produits",
+        "source": "https://www.example.com/aide"
+      },
+      {
+        "element": "Offres partenaires (ex. forfait Opérateur B)",
+        "citation": "Faites encore plus d'économies avec votre forfait Opérateur B",
+        "source": "https://www.example.com/"
+      },
+      {
+        "element": "Programme de reprise pour entreprises et l’offre Pro (service B2B)",
+        "citation": "Entreprise A pour les entreprises",
+        "source": "https://www.example.com/"
+      }
+    ],
+    "pistes": [
+      {
+        "titre": "Présenter le bilan de chaque appareil",
+        "opportunite": "Renforcer la confiance en reliant les engagements qualité aux résultats de l’appareil effectivement acheté.",
+        "existant": "La page qualité présente plusieurs dizaines de points de contrôle et une garantie commerciale de 12 mois.",
+        "apport": "Un bilan individuel consultable, au-delà des engagements et des contrôles présentés par catégorie.",
+        "proposition": "Alimenter automatiquement un bilan depuis les résultats des contrôles du reconditionneur : santé de batterie mesurée, date des tests et éventuelles pièces remplacées. Le rendre accessible dans la commande, sans saisie supplémentaire de l’acheteur.",
+        "impact": "fort",
+        "effort": "fort",
+        "source": "https://www.example.com/qualite"
+      },
+      {
+        "titre": "Clarifier l’alimentation et les accessoires",
+        "opportunite": "Faciliter un achat immédiatement adapté à l’usage prévu, notamment pour les appareils audio et les équipements livrés sans chargeur.",
+        "existant": "La page d’accueil propose des appareils audio, des smartphones, des ordinateurs et des tablettes ; le centre d’assistance donne accès au comparateur de produits et aux avis clients.",
+        "apport": "Une lecture automatique des conditions d’utilisation et des accessoires nécessaires, distincte de la comparaison entre modèles.",
+        "proposition": "Afficher près du bouton d’achat un résumé généré depuis les caractéristiques et le contenu du colis : fonctionnement sur batterie ou sur secteur, chargeur inclus ou non, connecteur requis. Lorsque le chargeur est absent, proposer une référence compatible déjà filtrée, à ajouter uniquement sur confirmation.",
+        "impact": "moyen",
+        "effort": "moyen",
+        "source": "https://www.example.com/"
+      },
+      {
+        "titre": "Préremplir la reprise depuis les commandes",
+        "opportunite": "Encourager la remise en circulation des appareils en réduisant les étapes nécessaires pour obtenir une offre.",
+        "existant": "La page reprise propose un service de reprise en trois étapes : offre, expédition gratuite et virement.",
+        "apport": "La réutilisation des caractéristiques d’un achat antérieur pour éviter de renseigner à nouveau l’identité de l’appareil.",
+        "proposition": "Ajouter une entrée de reprise depuis chaque commande éligible, avec modèle, capacité et couleur préremplis. Demander seulement la confirmation de l’appareil et de son état actuel, sans déduire cet état de son ancienneté, puis transmettre ces informations au parcours d’offre existant.",
+        "impact": "fort",
+        "effort": "moyen",
+        "source": "https://www.example.com/reprise"
+      }
+    ],
+    "perimetre_non_couvert": [],
+    "note_contexte": "",
+    "contexte_resume": "",
+    "pages_analysees": [
+      {
+        "url": "https://www.example.com/",
+        "titre": "Accueil"
+      },
+      {
+        "url": "https://www.example.com/qualite",
+        "titre": "Page qualité"
+      },
+      {
+        "url": "https://www.example.com/aide",
+        "titre": "Page d’aide"
+      },
+      {
+        "url": "https://www.example.com/reprise",
+        "titre": "Page reprise"
+      }
+    ]
+  },
+  "proof_of_work": {
+    "piste_retenue": "Préremplir la reprise depuis les commandes",
+    "justification_choix": "Cette piste associe un impact fort à un effort moyen en prolongeant le service de reprise existant. Des commandes fictives permettent de démontrer son intérêt sans connexion aux systèmes internes.",
+    "titre": "Démonstration de reprise depuis une commande",
+    "objectif": "Permettre à un particulier de préparer la reprise d’un smartphone acheté précédemment, en confirmant ses caractéristiques préremplies et son état actuel.",
+    "valeur_pour_l_entreprise": "Ce parcours valorise le service de reprise auprès des particuliers ayant déjà acheté un appareil. Il illustre comment les données de commande peuvent faciliter sa remise en circulation.",
+    "perimetre": [
+      "Une commande fictive de smartphone propose une action pour commencer sa reprise.",
+      "Le formulaire préremplit le modèle, la capacité et la couleur, puis demande leur confirmation.",
+      "L’utilisateur renseigne explicitement l’état actuel de l’appareil, indépendamment de sa date d’achat.",
+      "Un écran de réception simulée affiche les informations destinées au parcours d’offre existant."
+    ],
+    "hors_perimetre": [
+      "La connexion aux comptes clients et aux commandes réelles reste hors démonstration.",
+      "Le calcul d’une offre et la sélection d’un reconditionneur restent hors démonstration.",
+      "L’expédition et le paiement restent hors démonstration."
+    ],
+    "stack_suggeree": "HTML, CSS et JavaScript dans le navigateur, avec données fictives en JSON.",
+    "etapes": [
+      {
+        "etape": "Définir la commande fictive, les questions sur l’état et les informations transmises.",
+        "heures": 1
+      },
+      {
+        "etape": "Construire l’écran de commande et le formulaire prérempli avec une présentation adaptée au mobile.",
+        "heures": 2
+      },
+      {
+        "etape": "Implémenter les confirmations, les validations et la transmission vers l’écran de réception simulée.",
+        "heures": 3
+      },
+      {
+        "etape": "Tester le parcours, les champs obligatoires et la réinitialisation pour une nouvelle démonstration.",
+        "heures": 1.5
+      }
+    ],
+    "duree_calculee_heures": 7.5,
+    "critere_de_succes": "Depuis la commande fictive, un utilisateur atteint la réception simulée sans ressaisir modèle, capacité ou couleur, après confirmation des caractéristiques et renseignement de l’état actuel."
+  }
+}

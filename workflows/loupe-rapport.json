@@ -1,0 +1,123 @@
+{
+  "name": "Loupe — Rapport",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "loupe-rapport",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "4543bfdf-81b1-4153-92b9-098b2abb4386",
+      "name": "Requête rapport",
+      "webhookId": "2c9da981-8be9-54aa-b9da-286bb472a923"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, entreprise, url, teardown, proof_of_work,\n       to_char(created_at, 'DD/MM/YYYY') AS date_analyse\nFROM loupe.analyses\nWHERE id::text = $1 AND statut = 'termine'\nLIMIT 1;",
+        "options": {
+          "queryReplacement": "={{ [ String($json.query?.id ?? '') ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        220,
+        0
+      ],
+      "id": "d0dd56de-502a-46b2-b448-f72117896a45",
+      "name": "Lire analyse",
+      "credentials": {
+        "postgres": {
+          "id": "REMPLACER-ID-CREDENTIAL-POSTGRES",
+          "name": "Postgres"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Loupe — génération du rapport HTML (v2)\n// Utilisable tel quel dans un nœud Code n8n (mode \"Run Once for Each Item\") :\n//   const html = renderRapport($json.analyse, $json.proof_of_work, { date: $now.toFormat('dd/MM/yyyy') });\n//   return { json: { html } };\n// Le HTML est autonome (CSS inline) et prévu pour l'impression A4 : Ctrl+P > Enregistrer en PDF,\n// ou conversion directe par un service HTML → PDF (ex. Gotenberg) en v2.\n\nfunction renderRapport(a, p, opts = {}) {\n  // Les textes sont affichés sans les citations d'URL entre crochets ([http…]) que le modèle recopie parfois.\n  const e = (s) => String(s ?? '').replace(/\\s*\\[\\s*https?:\\/\\/[^\\]]*\\]/g, '').replace(/[&<>\"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;' }[c]));\n  const page = (u) => { const m = String(u ?? '').match(/^https?:\\/\\/[^/]+(\\/[^?#]*)?/); if (!m) return e(u); const segs = (m[1] || '/').split('/').filter(Boolean); return e(segs.length ? segs[segs.length - 1] : 'Accueil'); };\n  // pages_analysees : liste d'objets { url, titre } depuis la v2.1, liste d'URL dans les anciennes analyses.\n  const pages = (a.pages_analysees || []).map((x) => (x && typeof x === 'object' ? x : { url: x }));\n  // Source d'un point fort ou d'une piste : la page analysée correspondante (crochets et texte autour ignorés), sinon null.\n  const cle = (u) => String(u ?? '').replace(/\\/+$/, '');\n  const source = (s) => {\n    const brut = String(s ?? '');\n    const urls = [...(brut.match(/\\[\\s*https?:\\/\\/[^\\]\\s]+/g) || []).map((u) => u.replace(/^\\[\\s*/, '')), ...(brut.match(/https?:\\/\\/[^\\s\\[\\],]+/g) || [])];\n    for (const u of urls) { const p = pages.find((x) => cle(x.url) === cle(u)); if (p) return p; }\n    return null;\n  };\n  // Titre de page affiché : « Accueil » pour la page d'accueil, sans le suffixe qui répète le nom de l'entreprise\n  // (après « | », « – » ou « - »), et tronqué à 50 caractères.\n  const simple = (s) => String(s ?? '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();\n  const estAccueil = (u) => { const m = String(u ?? '').match(/^https?:\\/\\/[^/]+(\\/[^?#]*)?/); return !!m && /^\\/?([a-z]{2}([-_][a-z]{2})?\\/?)?$/i.test(m[1] || '/'); };\n  const nomPage = (x) => {\n    if (estAccueil(x.url)) return 'Accueil';\n    let t = String(x.titre ?? '').replace(/\\s+/g, ' ').trim();\n    if (!t) return page(x.url);\n    const entreprise = simple(a.entreprise);\n    const morceaux = t.split(/\\s+[|–—-]\\s+/);\n    const dernier = simple(morceaux[morceaux.length - 1]);\n    const premierMot = entreprise.split(' ')[0] || '';\n    if (morceaux.length > 1 && dernier && entreprise && (dernier.includes(entreprise) || entreprise.includes(dernier) || (premierMot.length >= 3 && dernier.includes(premierMot)))) {\n      t = t.slice(0, t.length - morceaux[morceaux.length - 1].length).replace(/\\s+[|–—-]\\s+$/, '').trim() || t;\n    }\n    return e(t.length > 50 ? t.slice(0, 49).trimEnd() + '…' : t);\n  };\n  const titre = (s) => { const p = source(s); if (p) return nomPage(p); return page(String(s ?? '').replace(/[\\[\\]]/g, '').split(',')[0].trim()); };\n  // Les analyses enregistrées avant la v2.2 peuvent porter un préfixe « Contexte : » dans contexte_resume.\n  const contexte = String(a.contexte_resume ?? '').replace(/^\\s*contexte\\s*:\\s*/i, '').trim();\n  // Étapes du proof-of-work : objets { etape, heures } depuis la v2.4, simples textes dans les anciennes analyses.\n  const heures = (v) => e(String(v ?? '').replace('.', ','));\n  const etape = (x) => (x && typeof x === 'object' ? e(x.etape) + (x.heures != null ? ' <span class=\"src\">· ' + heures(x.heures) + ' h</span>' : '') : e(x));\n  // Angles du contexte que les pages lues ne couvrent pas (depuis la v2.6).\n  const nonCouvert = (Array.isArray(a.perimetre_non_couvert) ? a.perimetre_non_couvert : []).filter((x) => typeof x === 'string' && x.trim());\n  const niveau = (v) => `<span class=\"niv niv-${e(v)}\">${e(v)}</span>`;\n  const m = a.marche || {};\n  const date = e(opts.date || new Date().toLocaleDateString('fr-FR'));\n\n  // Liste jointe par « · », sans ponctuation finale dans les éléments : la phrase ne se termine que par un seul point.\n  const joindre = (elements) => elements.map((x) => String(x ?? '').trim().replace(/[\\s.;,:·…]+$/, '')).filter(Boolean).join(' · ');\n  const phrase = (s) => { const t = String(s ?? '').trim().replace(/[\\s.;,:·]+$/, ''); return t ? e(t) + '.' : ''; };\n  const noteContexte = phrase(a.note_contexte);\n  // Encadré « Périmètre de l'analyse » : pages analysées, puis angles non couverts et note de contexte s'ils existent.\n  const perimetre = `<div class=\"card perimetre\"><div class=\"lbl\">Périmètre de l'analyse</div>\n  <p><strong>Pages analysées.</strong> ${joindre(pages.map(nomPage)) || '—'}.</p>\n  ${nonCouvert.length ? `<p><strong>Angles non couverts.</strong> Angles du contexte que les pages lues ne permettent pas d'analyser : ${joindre(nonCouvert.map((x) => e(x)))}.</p>` : ''}\n  ${noteContexte ? `<p>${noteContexte}</p>` : ''}\n  <p class=\"note\">Analyse générée automatiquement à partir du site public ; les pistes sont des propositions à discuter.</p>\n</div>`;\n\n  return `<!doctype html><html lang=\"fr\"><head><meta charset=\"utf-8\"><title>Loupe — ${e(a.entreprise)}</title>\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><style>\n@page { size: A4; margin: 14mm 0 16mm; @bottom-left { content: \"Loupe · analyse produit et marché\"; font: 8pt Inter, Arial, sans-serif; color: #8A8F98; padding-left: 16mm; } @bottom-right { content: counter(page) \" / \" counter(pages); font: 8pt Inter, Arial, sans-serif; color: #8A8F98; padding-right: 16mm; } }\n@page :first { margin-top: 0; }\nhtml, body, * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }\n:root { --ink:#16181D; --quiet:#5B616B; --line:#E4E6EA; --soft:#F5F6F8; --acc:#0F766E; --acc-soft:#E6F2F1; --warm:#B45309; }\n* { box-sizing: border-box; }\nbody { font-family: Inter, \"Segoe UI\", \"Helvetica Neue\", Arial, sans-serif; color: var(--ink); font-size: 9.6pt; line-height: 1.5; margin: 0; background: #fff; }\n.sheet { padding: 0 16mm 10mm; background: #fff; }\n.cover { background: var(--ink); color: #fff; margin: 0 -16mm; padding: 22mm 16mm 12mm; }\n.actions { display: none; }\n@media screen {\n  html { background: #E7E9EC; }\n  body { background: #E7E9EC; padding: 12mm 4mm 20mm; }\n  .sheet { max-width: 210mm; margin: 0 auto; box-shadow: 0 2px 18px rgba(0,0,0,.12); border-radius: 2mm; overflow: hidden; }\n  .actions { display: flex; justify-content: center; gap: 3mm; max-width: 210mm; margin: 0 auto 6mm; }\n  .actions button { font: 600 10pt Inter, \"Segoe UI\", Arial, sans-serif; background: var(--acc); color: #fff; border: 0; border-radius: 2mm; padding: 3mm 6mm; cursor: pointer; }\n  .actions span { align-self: center; font-size: 8.5pt; color: var(--quiet); }\n  .pow { margin-top: 10mm; border-top: 1px solid var(--line); padding-top: 2mm; }\n}\n@media print {\n  /* Impression dense : texte et espacements réduits d'environ 10 % par rapport à l'écran, bandeau de couverture inchangé. */\n  body { background: #fff; font-size: 8.1pt; line-height: 1.34; }\n  h2 { margin: 5.2mm 0 2.2mm; font-size: 7.7pt; }\n  h3 { font-size: 9.9pt; }\n  p { margin-bottom: 1.7mm; }\n  .cover { padding: 18mm 16mm 9mm; }\n  .cover h1 { font-size: 24pt; margin-top: 4mm; }\n  .synthese { margin-top: 4.75mm; font-size: 9pt; }\n  .pv { font-size: 9.9pt; }\n  .card { padding: 2.7mm 3.6mm; }\n  .grid { gap: 2.7mm; }\n  .forts li { padding-top: 2.2mm; padding-bottom: 2.2mm; }\n  .piste { padding: 3.1mm 4.1mm; margin-bottom: 2.2mm; }\n  .pow-tete { padding: 4mm 4.5mm; }\n  .pow-tete h3 { font-size: 11.7pt; }\n  .cols, .kpis { margin-top: 3.6mm; }\n  .kpi .v { font-size: 8.1pt; }\n  .big { font-size: 16.2pt; }\n  ul.l li, ol.l li { margin-bottom: 1.1mm; }\n}\n.brand { font-size: 8.5pt; letter-spacing: .18em; text-transform: uppercase; color: #7DD3C8; font-weight: 600; }\n.cover h1 { font-size: 28pt; line-height: 1.1; margin: 6mm 0 2mm; font-weight: 700; letter-spacing: -.01em; }\n.cover .meta { color: #A9B0BA; font-size: 9pt; }\n.synthese { margin: 7mm 0 0; font-size: 11pt; line-height: 1.55; color: #E8EAED; max-width: 150mm; }\nh2 { break-after: avoid; font-size: 8.5pt; letter-spacing: .14em; text-transform: uppercase; color: var(--acc); margin: 9mm 0 3mm; font-weight: 700; }\nh3 { font-size: 11pt; margin: 0 0 1.5mm; }\np { margin: 0 0 2mm; }\n.pv { font-size: 12pt; line-height: 1.5; border-left: 3px solid var(--acc); padding-left: 4mm; margin-top: 2mm; }\n.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm; }\n.card { background: var(--soft); border-radius: 3mm; padding: 4mm 4.5mm; break-inside: avoid; }\n.card .lbl { font-size: 7.5pt; letter-spacing: .1em; text-transform: uppercase; color: var(--quiet); font-weight: 600; margin-bottom: 1mm; }\n.ctx { background: var(--acc-soft); }\n.perimetre { background: none; border: 1px dashed var(--line); color: var(--quiet); font-size: 8.5pt; margin-bottom: 3mm; }\n.perimetre p { margin: 0 0 1.2mm; }\n.perimetre p:last-child { margin-bottom: 0; }\n.perimetre strong { color: var(--ink); font-weight: 600; }\n.note { font-size: 7.5pt; color: var(--quiet); font-style: italic; margin-top: 1.5mm; }\n.forts { list-style: none; padding: 0; margin: 0; }\n.forts li { padding: 2.5mm 0 2.5mm 7mm; border-bottom: 1px solid var(--line); position: relative; break-inside: avoid; }\n.forts li::before { content: \"✓\"; position: absolute; left: 0; top: 2.3mm; color: var(--acc); font-weight: 700; }\n.src { color: var(--quiet); font-size: 8pt; }\n.piste { border: 1px solid var(--line); border-radius: 3mm; padding: 4.5mm 5mm; margin-bottom: 3mm; break-inside: avoid; }\n.piste.retenue { border: 1.5px solid var(--acc); background: linear-gradient(0deg, #fff, var(--acc-soft)); }\n.piste-tete { display: flex; justify-content: space-between; align-items: baseline; gap: 4mm; }\n.num { color: var(--acc); font-weight: 700; margin-right: 2mm; }\n.badges { white-space: nowrap; font-size: 7.5pt; color: var(--quiet); }\n.niv { display: inline-block; padding: .4mm 2.2mm; border-radius: 9mm; font-weight: 600; margin-left: 1mm; text-transform: capitalize; }\n.niv-fort { background: #D1FAE5; color: #065F46; } .niv-moyen { background: #FEF3C7; color: #92400E; } .niv-faible { background: #E5E7EB; color: #374151; }\n.tag { display: inline-block; font-size: 7pt; letter-spacing: .08em; text-transform: uppercase; color: #fff; background: var(--acc); border-radius: 9mm; padding: .5mm 2.5mm; margin-bottom: 2mm; font-weight: 700; }\n.pow { margin-top: 2mm; }\n.pow-tete, .kpis { break-inside: avoid; }\n.pow-intro { break-inside: avoid; break-after: avoid; }\n.pow-tete { background: var(--soft); border-radius: 3mm; padding: 6mm; }\n.pow-tete h3 { font-size: 15pt; line-height: 1.25; margin-bottom: 2mm; }\n.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; margin-top: 5mm; }\nul.l, ol.l { margin: 0; padding-left: 4.5mm; } ul.l li, ol.l li { margin-bottom: 1.3mm; }\n.hors li { color: var(--quiet); }\n.kpis { display: grid; grid-template-columns: 1.3fr .7fr 2fr; gap: 3mm; margin-top: 5mm; }\n.kpi { border-top: 2px solid var(--acc); padding-top: 2mm; }\n.kpi .v { font-size: 10pt; font-weight: 600; }\n.big { font-size: 18pt; font-weight: 700; color: var(--acc); }\n</style></head><body>\n<div class=\"actions\"><button onclick=\"window.print()\">Enregistrer en PDF</button><span>Choisir « Enregistrer au format PDF » comme destination.</span></div>\n<main class=\"sheet\">\n<section class=\"cover\">\n  <div class=\"brand\">Loupe · analyse produit &amp; marché</div>\n  <h1>${e(a.entreprise)}</h1>\n  <div class=\"meta\">${date} · ${pages.length} pages analysées${opts.url ? ' · ' + e(opts.url) : ''}</div>\n  ${contexte ? `<div class=\"meta\">Contexte : ${e(contexte)}</div>` : ''}\n  <p class=\"synthese\">${e(a.synthese)}</p>\n</section>\n\n<h2>Proposition de valeur</h2>\n<p class=\"pv\">${e(a.proposition_de_valeur)}</p>\n\n<h2>Le marché</h2>\n<div class=\"grid\">\n  <div class=\"card\"><div class=\"lbl\">Segment</div>${e(m.segment)}</div>\n  <div class=\"card\"><div class=\"lbl\">Cible</div>${e(m.cible)}</div>\n  <div class=\"card\"><div class=\"lbl\">Positionnement</div>${e(m.positionnement)}</div>\n  <div class=\"card\"><div class=\"lbl\">Différenciation</div>${e(m.differenciation)}</div>\n  <div class=\"card\"><div class=\"lbl\">Modèle économique</div>${e(m.modele_economique)}</div>\n  <div class=\"card ctx\"><div class=\"lbl\">Contexte du secteur</div>${e(m.contexte_marche)}<div class=\"note\">Tendances générales, hors site analysé.</div></div>\n</div>\n\n<div style=\"break-inside: avoid\"><h2>Points forts</h2>\n<ul class=\"forts\">${(a.points_forts || []).map((f) => `<li>${e(f.constat)} <span class=\"src\">— ${titre(f.source)}</span></li>`).join('')}</ul></div>\n\n<h2>Pistes de développement</h2>\n${(a.pistes || []).map((x, i) => `<div class=\"piste${x.titre === p?.piste_retenue ? ' retenue' : ''}\">\n  ${x.titre === p?.piste_retenue ? '<span class=\"tag\">Piste prototypée</span>' : ''}\n  <div class=\"piste-tete\"><h3><span class=\"num\">${i + 1}</span>${e(x.titre)}</h3><div class=\"badges\">Impact ${niveau(x.impact)} Effort ${niveau(x.effort)}</div></div>\n  <p><strong>Opportunité.</strong> ${e(x.opportunite)}</p>\n  ${x.existant ? `<p><strong>Existant.</strong> ${e(x.existant)}</p>` : ''}\n  <p><strong>Piste.</strong> ${e(x.proposition)}</p>\n  ${x.apport ? `<p><strong>Apport.</strong> ${e(x.apport)}</p>` : ''}\n  ${source(x.source) ? `<div class=\"src\">Inspirée de : ${titre(x.source)}</div>` : ''}\n</div>`).join('')}\n${perimetre}\n\n${p ? `<section class=\"pow\">\n<div class=\"pow-intro\">\n<h2>Proof-of-work</h2>\n<div class=\"pow-tete\">\n  <h3>${e(p.titre)}</h3>\n  <p>${e(p.objectif)}</p>\n  <p class=\"src\" style=\"font-size:9pt;margin:0\"><strong style=\"color:var(--ink)\">Valeur pour l'entreprise.</strong> ${e(p.valeur_pour_l_entreprise)}</p>\n</div>\n<p style=\"margin-top:4mm\"><strong>Pourquoi cette piste.</strong> ${e(p.justification_choix)}</p>\n</div>\n<div class=\"kpis\">\n  <div class=\"kpi\"><div class=\"lbl\" style=\"font-size:7.5pt;color:var(--quiet);text-transform:uppercase;letter-spacing:.1em;font-weight:600\">Stack suggérée</div><div class=\"v\">${e(p.stack_suggeree)}</div></div>\n  <div class=\"kpi\"><div class=\"lbl\" style=\"font-size:7.5pt;color:var(--quiet);text-transform:uppercase;letter-spacing:.1em;font-weight:600\">Durée</div><div class=\"big\">${heures(p.duree_calculee_heures ?? p.duree_estimee_heures)} h</div></div>\n  <div class=\"kpi\"><div class=\"lbl\" style=\"font-size:7.5pt;color:var(--quiet);text-transform:uppercase;letter-spacing:.1em;font-weight:600\">Critère de succès</div><div class=\"v\" style=\"font-weight:400\">${e(p.critere_de_succes)}</div></div>\n</div>\n<div class=\"cols\">\n  <div><div class=\"card\" style=\"background:none;padding:0\"><div class=\"lbl\">Périmètre</div></div><ul class=\"l\">${(p.perimetre || []).map((x) => `<li>${e(x)}</li>`).join('')}</ul>\n       <div class=\"lbl\" style=\"font-size:7.5pt;letter-spacing:.1em;text-transform:uppercase;color:var(--quiet);font-weight:600;margin:4mm 0 1mm\">Hors périmètre</div><ul class=\"l hors\">${(p.hors_perimetre || []).map((x) => `<li>${e(x)}</li>`).join('')}</ul></div>\n  <div><div class=\"card\" style=\"background:none;padding:0\"><div class=\"lbl\">Étapes</div></div><ol class=\"l\">${(p.etapes || []).map((x) => `<li>${etape(x)}</li>`).join('')}</ol></div>\n</div>\n</section>` : ''}\n\n</main>\n</body></html>`;\n}\n\n// --- Nœud « Générer rapport » : une ligne de loupe.analyses en entrée, une page HTML en sortie.\nconst pageSimple = (titre, texte) =>\n  '<!doctype html><html lang=\"fr\"><head><meta charset=\"utf-8\"><title>Loupe — ' + titre + '</title></head>' +\n  '<body style=\"font-family: Inter, Arial, sans-serif; color: #16181D; max-width: 520px; margin: 18vh auto; padding: 0 24px\">' +\n  '<h1 style=\"font-size: 22px\">' + titre + '</h1><p style=\"color: #5B616B\">' + texte + '</p></body></html>';\n\nconst ligne = $json;\nif (!ligne.id) {\n  return { json: { code: 404, html: pageSimple('Rapport introuvable', 'Aucune analyse terminée ne correspond à cet identifiant.') } };\n}\ntry {\n  const html = renderRapport(ligne.teardown ?? {}, ligne.proof_of_work, { date: ligne.date_analyse, url: ligne.url });\n  return { json: { code: 200, html } };\n} catch (err) {\n  return { json: { code: 500, html: pageSimple('Rapport indisponible', \"Le rapport n'a pas pu être généré pour cette analyse.\") } };\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ],
+      "id": "feb487d6-531d-4df5-864b-11b5c0966fe7",
+      "name": "Générer rapport"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.html }}",
+        "options": {
+          "responseCode": "={{ $json.code }}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        660,
+        0
+      ],
+      "id": "7551c714-439f-4255-94da-da29523fa665",
+      "name": "Répondre"
+    }
+  ],
+  "connections": {
+    "Requête rapport": {
+      "main": [
+        [
+          {
+            "node": "Lire analyse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lire analyse": {
+      "main": [
+        [
+          {
+            "node": "Générer rapport",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Générer rapport": {
+      "main": [
+        [
+          {
+            "node": "Répondre",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}

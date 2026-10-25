@@ -1,0 +1,1174 @@
+{
+  "name": "Loupe — Analyse",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Loupe",
+        "formDescription": "Analyse du produit d'une entreprise à partir de son site.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Entreprise",
+              "fieldName": "entreprise",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "URL du site",
+              "fieldName": "url",
+              "placeholder": "https://exemple.com",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Contexte (optionnel) : pays, secteurs visés, priorités ou texte de référence",
+              "fieldType": "textarea",
+              "fieldName": "contexte"
+            },
+            {
+              "fieldType": "hiddenField",
+              "fieldName": "modele"
+            }
+          ]
+        },
+        "responseMode": "lastNode",
+        "options": {
+          "appendAttribution": false,
+          "buttonLabel": "Analyser",
+          "path": "loupe-analyse"
+        }
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.5,
+      "position": [
+        0,
+        -616
+      ],
+      "id": "604f6b31-ed9c-4b8b-9106-6a64b210cc82",
+      "name": "Formulaire",
+      "webhookId": "64ca2d47-d0bf-5d41-9c4d-6adc00a0c45c"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO loupe.analyses (entreprise, url, contexte, statut)\nVALUES ($1, $2, NULLIF($3, ''), 'en_cours')\nRETURNING id, entreprise, url, contexte;",
+        "options": {
+          "queryReplacement": "={{ [ $('Formulaire').first().json.entreprise.trim(), /^https?:\\/\\//i.test($('Formulaire').first().json.url.trim()) ? $('Formulaire').first().json.url.trim() : 'https://' + $('Formulaire').first().json.url.trim(), String($('Formulaire').first().json.contexte ?? '').trim() ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        448,
+        -616
+      ],
+      "id": "1c412cc1-7c58-4ed1-8fd7-49295bae2cfb",
+      "name": "Créer analyse",
+      "credentials": {
+        "postgres": {
+          "id": "REMPLACER-ID-CREDENTIAL-POSTGRES",
+          "name": "Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Créer analyse').first().json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (compatible; Loupe/1.0)"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1120,
+        -688
+      ],
+      "id": "324b1bf1-2340-43b4-9419-7c1913afc9c5",
+      "name": "Vérifier le site",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Entreprise : {{ $('Créer analyse').first().json.entreprise }}\nURL du site : {{ $('Créer analyse').first().json.url }}\nContexte fourni : {{ $('Créer analyse').first().json.contexte || 'aucun' }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "# Prompt système — Agent d'exploration\n\nTu explores le site d'une entreprise pour préparer une analyse produit. On te donne le nom de l'entreprise et l'URL de son site, et parfois un contexte (pays, secteurs visés, priorités ou texte de référence).\nTon objectif : choisir et lire les pages les plus utiles, puis dresser l'inventaire de ce que le site propose déjà. Tu ne rédiges ni analyse ni piste.\n\n## Choix des pages\n1. Lis d'abord la page d'accueil fournie.\n2. Lis ensuite 3 pages supplémentaires parmi les liens trouvés, dans cet ordre de priorité :\n   1) cas d'usage ou cas clients, 2) produit, 3) guide, FAQ ou page d'aide sur l'offre principale, 4) tarifs, 5) à propos.\n   Si un contexte est fourni, privilégie les pages qui correspondent à ses angles (par exemple revendeurs, professionnels, ou à propos pour les opérations).\n3. Ne lis jamais : pages légales, blog générique, carrières, connexion/inscription.\n4. Ne suis jamais un lien vers un fichier (.pdf, .doc, .docx, .zip, images) : lis uniquement des pages web.\n5. Suis uniquement des liens présents dans les pages lues : ne devine aucune URL.\n6. Lis 4 pages au total dès que le site en propose assez, jamais plus. Si l'outil répond « Page inaccessible » ou « Ce lien est un fichier », la page n'a pas été lue : ne la réessaie pas et choisis-en une autre.\n\n## Inventaire\n- Dresse `inventaire_existant` : les fonctionnalités, offres, services et outils que le site propose déjà.\n- Chaque élément porte une citation, extrait exact de moins de 20 mots de sa page source, recopié sans le modifier.\n- Dans le texte des pages, chaque lien apparaît sous la forme « texte du lien [URL] ». Une fonctionnalité visible seulement par un lien (par exemple « Calculer sa ration ») entre dans l'inventaire avec la mention « lien » ; sa citation est le texte du lien.\n- Le contexte sert uniquement à choisir les pages : n'en reprends rien dans l'inventaire.\n- Rédige les éléments en français, de façon concise ; évite les anglicismes quand un terme français existe. N'invente pas de nom de produit ou de marque pour l'entreprise.\n\n## Format de sortie\nRéponds uniquement avec un JSON conforme au schéma du parseur de sortie :\n- inventaire_existant : liste de 5 à 12 objets {\n    element (ce que le site propose déjà ; ajoute « (lien) » si l'élément n'est visible que par un lien),\n    citation (extrait exact, de moins de 20 mots, de la page source),\n    source (URL exacte de la page lue d'où vient la citation)\n  }\n- pages_analysees : liste d'objets { url, titre (titre court de la page) }, uniquement pour les pages réellement lues",
+          "maxIterations": 8,
+          "returnIntermediateSteps": true
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        1344,
+        -812
+      ],
+      "id": "8c51594e-4a65-4670-a23e-34b576c8af57",
+      "name": "Agent exploration",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-5-mini",
+          "cachedResultName": "gpt-5-mini"
+        },
+        "builtInTools": {},
+        "options": {
+          "reasoningEffort": "low"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        2504,
+        -980
+      ],
+      "id": "0d415093-6838-491c-849f-442a9db1084c",
+      "name": "Modèle OpenAI",
+      "credentials": {
+        "openAiApi": {
+          "id": "REMPLACER-ID-CREDENTIAL-OPENAI",
+          "name": "OpenAI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "description": "Lit une page web et renvoie son texte (tronqué à 15 000 caractères). Chaque lien de la page y figure sous la forme « texte du lien [URL] ». Fournir une URL absolue. Si la réponse commence par « Page inaccessible » ou « Ce lien est un fichier », la page n'a pas été lue : ne réessaie pas ce lien et choisis une autre page.",
+        "jsCode": "// Outil « Lire une page » : lit une page web et renvoie son texte, les liens sous la forme « texte du lien [URL] ».\n// Une lecture en échec renvoie un message court au lieu du contenu : « Page inaccessible (code) : non lue ».\nconst LONGUEUR_MAX = 15000;\nconst url = String((query && typeof query === 'object' ? query.url : query) ?? '').trim();\nif (!/^https?:\\/\\//i.test(url)) return 'Page inaccessible (URL invalide) : non lue';\n\nconst entites = { amp: '&', lt: '<', gt: '>', quot: '\"', apos: \"'\", nbsp: ' ', eacute: 'é', egrave: 'è', ecirc: 'ê', agrave: 'à', acirc: 'â', ccedil: 'ç', ugrave: 'ù', ucirc: 'û', ocirc: 'ô', icirc: 'î', iuml: 'ï', euml: 'ë', rsquo: '’', lsquo: '‘', laquo: '«', raquo: '»', hellip: '…', ndash: '–', mdash: '—', euro: '€', deg: '°', oelig: 'œ' };\nconst decoder = (s) => s\n  .replace(/&#(\\d+);/g, (m, n) => String.fromCodePoint(Number(n)))\n  .replace(/&#x([0-9a-f]+);/gi, (m, n) => String.fromCodePoint(parseInt(n, 16)))\n  .replace(/&([a-z]+);/gi, (m, nom) => entites[nom.toLowerCase()] ?? m);\nconst sansBalises = (s) => decoder(s.replace(/<[^>]+>/g, ' ')).replace(/\\s+/g, ' ').trim();\n\ntry {\n  const aide = (typeof helpers !== 'undefined' && helpers) || this.helpers;\n  const reponse = await aide.httpRequest({\n    url,\n    method: 'GET',\n    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Loupe/1.0)', Accept: 'text/html,application/xhtml+xml' },\n    timeout: 15000,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n    json: false,\n  });\n  const code = Number(reponse?.statusCode ?? 0);\n  if (code >= 400) return 'Page inaccessible (' + code + ') : non lue';\n  const type = String((reponse?.headers ?? {})['content-type'] ?? '').split(';')[0].trim().toLowerCase();\n  if (type && !/^(text\\/html|application\\/xhtml\\+xml|text\\/plain)$/.test(type)) return 'Ce lien est un fichier (' + type + '), non lu';\n  const html = reponse?.body;\n  if (typeof html !== 'string' || !html.trim()) return 'Page inaccessible (réponse vide) : non lue';\n\n  const titre = sansBalises((html.match(/<title[^>]*>([\\s\\S]*?)<\\/title>/i) ?? [])[1] ?? '');\n  if (/\\b404\\b|not found|introuvable|non trouvée|n['’]existe pas/i.test(titre)) return \"Page inaccessible (page d'erreur) : non lue\";\n\n  let corps = html.replace(/<!--[\\s\\S]*?-->/g, ' ');\n  corps = (corps.match(/<body[^>]*>([\\s\\S]*)<\\/body>/i) ?? [])[1] ?? corps;\n  corps = corps\n    .replace(/<(script|style|noscript|svg|template|iframe|head)\\b[\\s\\S]*?<\\/\\1>/gi, ' ')\n    .replace(/<a\\b[^>]*?\\bhref\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^\\s>]+))[^>]*>([\\s\\S]*?)<\\/a>/gi, (m, a, b, c, contenu) => {\n      const lien = decoder(String(a ?? b ?? c ?? '').trim());\n      const texte = sansBalises(contenu);\n      if (!lien || /^(javascript:|#)/i.test(lien)) return ' ' + texte + ' ';\n      return texte ? ' ' + texte + ' [' + lien + '] ' : ' ';\n    })\n    .replace(/<\\/?(p|div|li|ul|ol|h[1-6]|tr|section|article|header|footer|nav|br)\\b[^>]*>/gi, '\\n')\n    .replace(/<[^>]+>/g, ' ');\n  const texte = decoder(corps).replace(/[ \\t ]+/g, ' ').replace(/ ?\\n ?/g, '\\n').replace(/\\n{2,}/g, '\\n').trim();\n  if (!texte) return 'Page inaccessible (page sans texte) : non lue';\n  return ((titre ? 'Titre : ' + titre + '\\n' : '') + texte).slice(0, LONGUEUR_MAX);\n} catch (err) {\n  const message = String(err?.message ?? err) + ' ' + String(err?.code ?? err?.cause?.code ?? '');\n  const motif = /ENOTFOUND|EAI_AGAIN|getaddrinfo/i.test(message) ? 'adresse introuvable'\n    : /ECONNABORTED|ETIMEDOUT|ESOCKETTIMEDOUT|timeout|timed out|aborted/i.test(message) ? 'délai dépassé'\n    : 'erreur réseau';\n  return 'Page inaccessible (' + motif + ') : non lue';\n}",
+        "specifyInputSchema": true,
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"url\": {\n      \"type\": \"string\",\n      \"description\": \"URL absolue (https://...) de la page à lire\"\n    }\n  },\n  \"required\": [\n    \"url\"\n  ]\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolCode",
+      "typeVersion": 1.3,
+      "position": [
+        1352,
+        -588
+      ],
+      "id": "e7d8f683-ffb3-4fc8-aa1a-ce4687a3184e",
+      "name": "Lire une page"
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"entreprise\": {\n      \"type\": \"string\",\n      \"description\": \"Nom de l'entreprise\"\n    },\n    \"synthese\": {\n      \"type\": \"string\",\n      \"description\": \"2 à 3 phrases : ce que fait l'entreprise, pour qui, et l'opportunité principale\"\n    },\n    \"proposition_de_valeur\": {\n      \"type\": \"string\",\n      \"description\": \"1 à 2 phrases\"\n    },\n    \"marche\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"segment\": {\n          \"type\": \"string\",\n          \"description\": \"Le marché sur lequel l'entreprise opère\"\n        },\n        \"cible\": {\n          \"type\": \"string\",\n          \"description\": \"Utilisateurs et acheteurs\"\n        },\n        \"positionnement\": {\n          \"type\": \"string\",\n          \"description\": \"Comment l'entreprise se présente et ce qu'elle revendique\"\n        },\n        \"differenciation\": {\n          \"type\": \"string\",\n          \"description\": \"Ce qui la distingue selon son site\"\n        },\n        \"modele_economique\": {\n          \"type\": \"string\",\n          \"description\": \"Texte ou « non déterminé »\"\n        },\n        \"contexte_marche\": {\n          \"type\": \"string\",\n          \"description\": \"2 à 3 phrases de tendances générales du secteur, issues de connaissances générales\"\n        }\n      },\n      \"required\": [\n        \"segment\",\n        \"cible\",\n        \"positionnement\",\n        \"differenciation\",\n        \"modele_economique\",\n        \"contexte_marche\"\n      ],\n      \"additionalProperties\": false\n    },\n    \"points_forts\": {\n      \"type\": \"array\",\n      \"description\": \"2 à 3 points forts\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"constat\": {\n            \"type\": \"string\",\n            \"description\": \"Ce que l'entreprise fait bien\"\n          },\n          \"source\": {\n            \"type\": \"string\",\n            \"description\": \"URL exacte d'une des pages fournies, sans crochets ni autre texte\"\n          }\n        },\n        \"required\": [\n          \"constat\",\n          \"source\"\n        ],\n        \"additionalProperties\": false\n      }\n    },\n    \"pistes\": {\n      \"type\": \"array\",\n      \"description\": \"3 pistes de développement\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"titre\": {\n            \"type\": \"string\",\n            \"description\": \"Court, orienté action\"\n          },\n          \"opportunite\": {\n            \"type\": \"string\",\n            \"description\": \"Ce que l'entreprise pourrait gagner, formulé positivement\"\n          },\n          \"existant\": {\n            \"type\": \"string\",\n            \"description\": \"Les éléments de l'inventaire sur ce sujet, en nommant la page source, ou « rien de visible »\"\n          },\n          \"apport\": {\n            \"type\": \"string\",\n            \"description\": \"Ce que la piste ajoute à l'existant\"\n          },\n          \"proposition\": {\n            \"type\": \"string\",\n            \"description\": \"La piste concrète\"\n          },\n          \"impact\": {\n            \"type\": \"string\",\n            \"enum\": [\n              \"fort\",\n              \"moyen\",\n              \"faible\"\n            ]\n          },\n          \"effort\": {\n            \"type\": \"string\",\n            \"enum\": [\n              \"fort\",\n              \"moyen\",\n              \"faible\"\n            ]\n          },\n          \"source\": {\n            \"type\": \"string\",\n            \"description\": \"URL exacte d'une des pages fournies, sans crochets ni autre texte\"\n          }\n        },\n        \"required\": [\n          \"titre\",\n          \"opportunite\",\n          \"existant\",\n          \"apport\",\n          \"proposition\",\n          \"impact\",\n          \"effort\",\n          \"source\"\n        ],\n        \"additionalProperties\": false\n      }\n    },\n    \"perimetre_non_couvert\": {\n      \"type\": \"array\",\n      \"description\": \"Liste courte des angles du contexte que les pages lues ne permettent pas d'analyser ; liste vide sans contexte\",\n      \"items\": {\n        \"type\": \"string\"\n      }\n    },\n    \"note_contexte\": {\n      \"type\": \"string\",\n      \"description\": \"Une phrase, seulement si le contexte vise un angle de perimetre_non_couvert : comment les pistes y répondent malgré tout ; chaîne vide sinon\"\n    },\n    \"contexte_resume\": {\n      \"type\": \"string\",\n      \"description\": \"Une ligne qui résume le contexte fourni, sans citer le texte collé et sans préfixe « Contexte : » ; chaîne vide sans contexte\"\n    }\n  },\n  \"required\": [\n    \"entreprise\",\n    \"synthese\",\n    \"proposition_de_valeur\",\n    \"marche\",\n    \"points_forts\",\n    \"pistes\",\n    \"perimetre_non_couvert\",\n    \"note_contexte\",\n    \"contexte_resume\"\n  ],\n  \"additionalProperties\": false\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        1992,
+        -784
+      ],
+      "id": "6bb5086f-d363-46ee-ae73-c6dac90a8018",
+      "name": "Schéma teardown"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Analyse :\n{{ JSON.stringify(($('Analyse finale').first().json.output_pow ?? $('Analyse finale').first().json.output ?? $('Analyse brute').first().json.output), null, 2) }}\n\nContexte fourni : {{ $('Créer analyse').first().json.contexte || 'aucun' }}",
+        "hasOutputParser": true,
+        "messages": {
+          "messageValues": [
+            {
+              "message": "# Prompt — Proposition de proof-of-work (v2)\n\nTu reçois l'analyse JSON d'un produit et, parfois, un contexte (pays, secteurs visés, priorités ou texte de référence). Choisis la piste au meilleur rapport impact/effort\net transforme-la en spécification d'un prototype réalisable par une seule personne\nassistée d'un agent de code.\n\n## Règles\n- Le prototype doit être démontrable seul, sans accès aux systèmes internes de l'entreprise.\n- Périmètre volontairement réduit : une seule fonctionnalité, un seul parcours.\n- Le prototype s'appuie sur la technologie existante de l'entreprise, simulée (mode démo, données fictives) ou via les capacités du navigateur ; il ne reconstruit jamais sa technologie cœur (modèles, moteur, infrastructure). Il illustre un apport produit : parcours utilisateur, packaging sectoriel, démonstration ou intégration. Stack légère : uniquement des outils disponibles dans le navigateur ou des données simulées.\n- Présente le prototype comme une contribution à ce que l'entreprise fait déjà bien, jamais comme une correction.\n- Contexte fourni : il sert uniquement à choisir la piste et le cas d'usage du prototype, de préférence alignés sur les cibles qu'il décrit. Ne le reformule jamais et ne le présente jamais comme une information sur l'entreprise ou sur le marché, dans aucun champ.\n- Réglementation : ne nomme aucune norme, organisme, autorité ni obligation légale, et n'emploie pas les mots certification, homologation ou agrément, s'ils ne figurent pas textuellement dans l'analyse reçue. S'ils n'y figurent pas, reste générique (« référentiels du secteur », « exigences de traçabilité du métier »).\n- Évite le jargon excessif (pas de “product-market fit” pour une démo).\n- Estime la durée réelle de chaque étape. L'étape la plus complexe techniquement reçoit l'estimation la plus élevée.\n- Évite les domaines soumis à homologation ou à une réglementation forte.\n- Désigne les clients par leur métier précis (entreprises de maintenance incendie, pas services incendie).\n- Rédige en français, de façon concise et concrète ; évite les anglicismes quand un terme français existe (fidélité client, désabonnement, parcours, maquette, rappels). N'invente pas de nom de produit ou de marque pour l'entreprise.\n- Écris des phrases complètes et naturelles ; évite les adverbes juxtaposés (préférer “produire rapidement des rapports juridiquement exploitables”).\n- N'écris aucune URL ni aucune citation entre crochets dans les champs de texte.\n- Accorde correctement le genre des mots empruntés à l'anglais (une checklist).\n- Formule les éléments de périmètre positivement : pas de partiel ni de limité.\n- Au plus 4 éléments de périmètre, 3 éléments hors périmètre et 5 étapes.\n- Longueurs maximales : objectif et critère de succès en une phrase de 30 mots ; chaque élément de liste en 20 mots ; stack suggérée en 15 mots.\n\n## Format de sortie\nRéponds uniquement avec un JSON :\n- piste_retenue (titre repris de l'analyse)\n- justification_choix (1 à 2 phrases)\n- titre\n- objectif (1 phrase)\n- valeur_pour_l_entreprise (1 à 2 phrases, liées au marché ou à la cible)\n- perimetre (liste de 3 à 4 éléments)\n- hors_perimetre (liste de 2 à 3 éléments)\n- stack_suggeree (texte court)\n- etapes : liste ordonnée de 3 à 5 objets { etape, heures (durée estimée de l'étape, en heures) }\n- critere_de_succes (1 phrase vérifiable)"
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        3872,
+        -1204
+      ],
+      "id": "15b3494b-2aeb-4bf2-a123-fb81dd24fe38",
+      "name": "Proposition proof-of-work",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"piste_retenue\": {\n      \"type\": \"string\",\n      \"description\": \"Titre repris de l'analyse\"\n    },\n    \"justification_choix\": {\n      \"type\": \"string\",\n      \"description\": \"1 à 2 phrases\"\n    },\n    \"titre\": {\n      \"type\": \"string\",\n      \"description\": \"Titre du prototype\"\n    },\n    \"objectif\": {\n      \"type\": \"string\",\n      \"description\": \"1 phrase\"\n    },\n    \"valeur_pour_l_entreprise\": {\n      \"type\": \"string\",\n      \"description\": \"1 à 2 phrases, liées au marché ou à la cible\"\n    },\n    \"perimetre\": {\n      \"type\": \"array\",\n      \"description\": \"3 à 4 éléments\",\n      \"items\": {\n        \"type\": \"string\"\n      }\n    },\n    \"hors_perimetre\": {\n      \"type\": \"array\",\n      \"description\": \"2 à 3 éléments\",\n      \"items\": {\n        \"type\": \"string\"\n      }\n    },\n    \"stack_suggeree\": {\n      \"type\": \"string\",\n      \"description\": \"Texte court\"\n    },\n    \"etapes\": {\n      \"type\": \"array\",\n      \"description\": \"3 à 5 étapes ordonnées\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"etape\": {\n            \"type\": \"string\",\n            \"description\": \"Description de l'étape\"\n          },\n          \"heures\": {\n            \"type\": \"number\",\n            \"description\": \"Durée estimée de l'étape, en heures\"\n          }\n        },\n        \"required\": [\n          \"etape\",\n          \"heures\"\n        ],\n        \"additionalProperties\": false\n      }\n    },\n    \"critere_de_succes\": {\n      \"type\": \"string\",\n      \"description\": \"1 phrase vérifiable\"\n    }\n  },\n  \"required\": [\n    \"piste_retenue\",\n    \"justification_choix\",\n    \"titre\",\n    \"objectif\",\n    \"valeur_pour_l_entreprise\",\n    \"perimetre\",\n    \"hors_perimetre\",\n    \"stack_suggeree\",\n    \"etapes\",\n    \"critere_de_succes\"\n  ],\n  \"additionalProperties\": false\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        4744,
+        -980
+      ],
+      "id": "40c0de40-1438-4531-9044-27bf1b055094",
+      "name": "Schéma proof-of-work"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE loupe.analyses\nSET teardown = $1::jsonb,\n    proof_of_work = $2::jsonb,\n    modele = $3,\n    modele_redaction = $8,\n    avertissements = $5::jsonb,\n    nb_pages = $6::integer,\n    tentatives_pow = $7::integer,\n    duree_ms = (extract(epoch FROM (now() - created_at)) * 1000)::integer,\n    statut = 'termine',\n    updated_at = now()\nWHERE id = $4::uuid\nRETURNING id, duree_ms;",
+        "options": {
+          "queryReplacement": "={{ [ JSON.stringify(($('Analyse finale').first().json.output ?? $('Analyse brute').first().json.output)), JSON.stringify($json.proof_of_work ?? $('Proposition proof-of-work').first().json.output), $('Configuration modèles').first().json.modele_exploration, $('Créer analyse').first().json.id, (() => { const a = $json.avertissements ?? $('Vérifier termes réglementaires').first().json.avertissements; return a == null ? null : JSON.stringify(a); })(), $json.nb_pages ?? $('Vérifier termes réglementaires').first().json.nb_pages ?? null, $json.tentatives_pow ?? 1, $('Configuration modèles').first().json.modele_redaction ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        5248,
+        -1328
+      ],
+      "id": "ce8d1009-403b-40cb-b73d-38b3b156a81e",
+      "name": "Enregistrer analyse",
+      "credentials": {
+        "postgres": {
+          "id": "REMPLACER-ID-CREDENTIAL-POSTGRES",
+          "name": "Postgres"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "completion",
+        "respondWith": "showText",
+        "responseText": "={{ (() => {\n  const e = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;');\n  const a = $('Créer analyse').first().json;\n  const t = ($('Analyse finale').first().json.output ?? $('Analyse brute').first().json.output) ?? {};\n  const lien = '/webhook/loupe-rapport?id=' + encodeURIComponent(a.id);\n  const css = 'body { font-family: system-ui, sans-serif; color: #16181D; background: #fbfcfe; margin: 0; padding: 24px; line-height: 1.55; } '\n    + 'main { max-width: 680px; margin: 8vh auto 0; background: #fff; border: 1px solid #dbdfe7; border-radius: 8px; padding: 28px 32px; } '\n    + '.marque { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: #0F766E; font-weight: 600; } '\n    + 'h1 { font-size: 26px; margin: 8px 0 2px; } .src { color: #5B616B; font-size: 13px; } '\n    + '.synthese { font-size: 16px; margin: 20px 0 24px; } '\n    + '.btn { display: inline-block; background: #0F766E; color: #fff; text-decoration: none; font-weight: 600; padding: 10px 18px; border-radius: 6px; }';\n  return '<!DOCTYPE html><html lang=\"fr\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Loupe — ' + e(a.entreprise) + '</title><style>' + css + '</style></head><body><main>'\n    + '<div class=\"marque\">Loupe · analyse terminée</div>'\n    + '<h1>' + e(t.entreprise || a.entreprise) + '</h1><p class=\"src\">' + e(a.url) + '</p>'\n    + '<p class=\"synthese\">' + e(t.synthese) + '</p>'\n    + '<p><a class=\"btn\" href=\"' + e(lien) + '\" target=\"_blank\" rel=\"noopener\">Ouvrir le rapport</a></p>'\n    + '<p class=\"src\">Pour l\\'enregistrer en PDF : Ctrl+P, puis « Enregistrer en PDF ».</p>'\n    + '</main></body></html>';\n})() }}"
+      },
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.5,
+      "position": [
+        5472,
+        -1376
+      ],
+      "id": "ba70f459-c31f-4330-90b0-d04bbb49025b",
+      "name": "Page résultat",
+      "webhookId": "cb788934-c4c1-568f-8944-d05948ef09b3"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE loupe.analyses\nSET statut = 'erreur',\n    erreur = $1,\n    duree_ms = (extract(epoch FROM (now() - created_at)) * 1000)::integer,\n    updated_at = now()\nWHERE id = $2::uuid\nRETURNING id, $3::text AS message_page;",
+        "options": {
+          "queryReplacement": "={{ [ (typeof $json.error === 'string' ? $json.error : JSON.stringify($json.error ?? $json.message ?? 'erreur inconnue')).slice(0, 2000), $('Créer analyse').first().json.id, $json.message_page ?? 'Analyse impossible : site inaccessible ou trop lent.' ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        5472,
+        -540
+      ],
+      "id": "4e550bf2-24c5-480a-ae74-22cbd95ac49f",
+      "name": "Enregistrer erreur",
+      "credentials": {
+        "postgres": {
+          "id": "REMPLACER-ID-CREDENTIAL-POSTGRES",
+          "name": "Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "completion",
+        "completionTitle": "Analyse impossible",
+        "completionMessage": "={{ $json.message_page ?? 'Analyse impossible : site inaccessible ou trop lent.' }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.5,
+      "position": [
+        5696,
+        -540
+      ],
+      "id": "705ccf94-b379-41cb-994f-0e69103dc93f",
+      "name": "Page erreur",
+      "webhookId": "1e2bce57-4cf3-5e86-8bf8-27c54e3c43ac"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Classe l'échec de « Vérifier le site » : accès refusé (403/429), délai dépassé, DNS, autre.\nconst err = $input.first().json.error;\nconst o = err && typeof err === 'object' ? err : {};\nconst brut = typeof err === 'string' ? err : JSON.stringify(err ?? '');\n\nconst statut =\n  Number(o.httpCode ?? o.statusCode ?? o.status ?? o.response?.status ?? o.cause?.status ?? o.cause?.response?.status) ||\n  Number((brut.match(/status code (\\d{3})/i) ?? [])[1]) ||\n  null;\nconst code = String(o.code ?? o.cause?.code ?? o.errno ?? '');\nconst indices = code + ' ' + brut;\n\nlet categorie;\nlet message;\nif (statut === 403) {\n  categorie = 'site_acces_refuse';\n  message = 'Analyse impossible : le site refuse les requêtes automatisées (HTTP 403).';\n} else if (statut === 429) {\n  categorie = 'site_acces_refuse';\n  message = 'Analyse impossible : le site limite le nombre de requêtes (HTTP 429). Réessayez dans quelques minutes.';\n} else if (statut) {\n  categorie = 'site_autre';\n  message = 'Analyse impossible : le site a répondu par une erreur (HTTP ' + statut + ').';\n} else if (/ENOTFOUND|EAI_AGAIN|getaddrinfo/i.test(indices)) {\n  categorie = 'site_dns';\n  message = \"Analyse impossible : adresse introuvable. Vérifiez l'URL saisie.\";\n} else if (/ECONNABORTED|ETIMEDOUT|ESOCKETTIMEDOUT|timeout|timed out/i.test(indices)) {\n  categorie = 'site_timeout';\n  message = \"Analyse impossible : le site n'a pas répondu dans le délai de 15 secondes.\";\n} else {\n  categorie = 'site_autre';\n  message = 'Analyse impossible : le site est inaccessible.';\n}\n\nconst detail = String(o.message ?? o.description ?? brut).slice(0, 500);\n\nreturn [\n  {\n    json: {\n      categorie,\n      message_page: message,\n      error: ('[' + categorie + '] ' + message + ' — détail : ' + detail).slice(0, 2000),\n    },\n  },\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5248,
+        -176
+      ],
+      "id": "a763427d-755d-44ae-903c-f5670e8e6156",
+      "name": "Qualifier erreur site"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE loupe.analyses\nSET statut = 'erreur',\n    erreur = 'analyse interrompue',\n    updated_at = now()\nWHERE statut = 'en_cours'\n  AND created_at < now() - interval '10 minutes';",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        224,
+        -616
+      ],
+      "id": "3140c2f0-020a-4852-af7d-a6c885b1f782",
+      "name": "Clore analyses interrompues",
+      "credentials": {
+        "postgres": {
+          "id": "REMPLACER-ID-CREDENTIAL-POSTGRES",
+          "name": "Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Compare la sortie de l'agent au texte des pages réellement lues.\n// Sortie : avertissements = liste d'objets { terme, champ } pour les termes réglementaires et les mots\n// en majuscules (2 à 6 lettres) cités par l'agent mais absents des pages ; nb_pages = pages lues sans erreur.\nconst TERMES = [\n  { terme: 'AFNOR', motif: 'AFNOR' },\n  { terme: 'INRS', motif: 'INRS' },\n  { terme: 'ISO', motif: 'ISO', motEntier: true },\n  { terme: 'NF', motif: 'NF', motEntier: true },\n  { terme: 'décret', motif: 'décrets?', insensible: true },\n  { terme: 'arrêté', motif: 'arrêtés?', insensible: true },\n  { terme: 'obligation légale', motif: 'obligations?\\\\s+légales?', insensible: true },\n  { terme: 'autorités', motif: 'autorités', insensible: true },\n  { terme: 'certification', motif: 'certifications?', insensible: true },\n  { terme: 'homologation', motif: 'homologations?', insensible: true },\n  { terme: 'agrément', motif: 'agréments?', insensible: true },\n];\n// Champs non contrôlés : résumé du contexte saisi, liste des pages et URL de source.\nconst CHAMPS_IGNORES = ['contexte_resume', 'pages_analysees', 'source', 'citation'];\n// Sigles courants admis même s'ils ne figurent pas dans les pages : copie de loupe/config/sigles-autorises.json.\nconst SIGLES_AUTORISES = [\"SMS\", \"CRM\", \"ERP\", \"API\", \"KPI\", \"ROI\", \"PDF\", \"HT\", \"TTC\", \"TVA\", \"SaaS\", \"B2B\", \"B2C\", \"UX\", \"UI\", \"IA\", \"SEO\", \"FAQ\", \"CSV\", \"JSON\"].map((sigle) => sigle.toUpperCase());\n// L'outil renvoie son texte dans une enveloppe JSON ([{\"response\":\"…\"}]) : on en extrait le texte.\nconst deballer = (observation) => {\n  const brut = typeof observation === 'string' ? observation : JSON.stringify(observation ?? '');\n  try {\n    const valeur = JSON.parse(brut);\n    const textes = (Array.isArray(valeur) ? valeur : [valeur]).map((x) => (x && typeof x === 'object' ? x.response ?? x.data : x)).filter((x) => typeof x === 'string');\n    if (textes.length) return textes.join('\\n');\n  } catch (err) {\n    // pas du JSON : texte brut\n  }\n  return brut;\n};\nconst normaliser = (s) => String(s ?? '').normalize('NFC').replace(/[  ]/g, ' ');\nconst motEntier = (motif, options) => new RegExp('(?<![\\\\p{L}\\\\p{N}])(?:' + motif + ')(?![\\\\p{L}\\\\p{N}])', options);\n\ntry {\n  const agent = $('Analyse brute').first().json;\n  const etapes = Array.isArray(agent.intermediateSteps) ? agent.intermediateSteps : [];\n  // Résultat de chaque appel de l'outil « Lire une page » : du JSON sous forme de texte.\n  const observations = etapes.map((etape) => deballer(etape?.observation));\n  // Lectures en échec : message court du nouvel outil, ou objet d'erreur de l'ancien.\n  const enEchec = (o) => o.trim() === '' || /^\\s*(Page inaccessible|Ce lien est un fichier|There was an error)/i.test(o) || /^\\s*\\[?\\s*\\{\\s*\\\\*\"error\\\\*\"/.test(o);\n  const nb_pages = observations.filter((o) => !enEchec(o)).length;\n\n  // Texte des pages : résultats de l'outil et page d'accueil, sans scripts, balises ni séquences d'échappement.\n  const accueil = String($('Vérifier le site').first().json.data ?? '')\n    .replace(/<script[\\s\\S]*?<\\/script>|<style[\\s\\S]*?<\\/style>/gi, ' ')\n    .replace(/<[^>]+>/g, ' ');\n  const pages = normaliser(observations.filter((o) => !enEchec(o)).join(' ').replace(/\\\\+[nrt]/g, ' ').replace(/\\\\+\"/g, '\"') + ' ' + accueil);\n  // Les sigles saisis dans le contexte ne sont pas signalés.\n  const pagesEtContexte = pages + ' ' + normaliser($('Créer analyse').first().json.contexte);\n\n  const champs = [];\n  const parcourir = (valeur, chemin) => {\n    if (typeof valeur === 'string') champs.push({ chemin, texte: normaliser(valeur) });\n    else if (Array.isArray(valeur)) valeur.forEach((v, i) => parcourir(v, chemin + '[' + i + ']'));\n    else if (valeur && typeof valeur === 'object') {\n      for (const [cle, v] of Object.entries(valeur)) {\n        if (!CHAMPS_IGNORES.includes(cle)) parcourir(v, chemin ? chemin + '.' + cle : cle);\n      }\n    }\n  };\n  // Sortie contrôlée : l'analyse finale (pistes régénérées comprises), sinon celle de l'agent.\n  let finale = {};\n  try { finale = $('Analyse finale').first().json ?? {}; } catch (err) { finale = {}; }\n  parcourir(finale.output ?? agent.output, '');\n\n  // Les avertissements de la relecture critique sont repris en tête.\n  const avertissements = Array.isArray(finale.avertissements_relecture) ? [...finale.avertissements_relecture] : [];\n  // Avertissement éventuel de la rédaction (modèle de rédaction en échec).\n  if (Array.isArray(agent.avertissements_redaction)) avertissements.push(...agent.avertissements_redaction);\n  // 1. Termes réglementaires.\n  for (const { terme, motif, insensible, motEntier: entier } of TERMES) {\n    const options = insensible ? 'iu' : 'u';\n    const dansSortie = motEntier(motif, options);\n    // Dans les pages, recherche sans limite de mot (la conversion en texte colle parfois deux mots),\n    // sauf pour les sigles courts, qui se retrouveraient à l'intérieur d'autres mots.\n    if ((entier ? dansSortie : new RegExp(motif, options)).test(pages)) continue;\n    for (const { chemin, texte } of champs) {\n      if (dansSortie.test(texte)) avertissements.push({ terme, champ: chemin });\n    }\n  }\n  // 2. Mots en majuscules de 2 à 6 lettres absents des pages (comparaison sans tenir compte de la casse).\n  const dejaControles = TERMES.map((t) => t.terme);\n  const presence = {};\n  for (const { chemin, texte } of champs) {\n    const mots = [...new Set(texte.match(/(?<![\\p{L}\\p{N}])\\p{Lu}{2,6}(?![\\p{L}\\p{N}])/gu) ?? [])];\n    for (const mot of mots) {\n      if (dejaControles.includes(mot) || SIGLES_AUTORISES.includes(mot)) continue;\n      if (presence[mot] === undefined) presence[mot] = motEntier(mot, 'iu').test(pagesEtContexte);\n      if (!presence[mot]) avertissements.push({ terme: mot, champ: chemin });\n    }\n  }\n  // 3. Citations de l'inventaire : chaque extrait doit figurer dans le texte de sa page source.\n  // Comparaison sur les lettres et les chiffres seulement : sans casse, espaces, ponctuation ni URL entre crochets\n  // (la conversion en texte colle parfois deux mots et remplace les puces).\n  const compacter = (s) => normaliser(s).toLowerCase()\n    .replace(/\\[\\s*(?:https?:\\/\\/|\\/|#|mailto:|tel:)[^\\]\\s]*\\s*\\]/g, '')\n    .replace(/[^\\p{L}\\p{N}]+/gu, '');\n  const adresse = (u) => String(u ?? '').trim().replace(/\\/+$/, '');\n  const textesParPage = etapes.map((etape, i) => ({\n    url: adresse(etape?.action?.toolInput?.url ?? etape?.action?.toolInput?.query),\n    texte: compacter(observations[i].replace(/\\\\+[nrt]/g, ' ').replace(/\\\\+\"/g, '\"')),\n  }));\n  const toutesLesPages = compacter(pages);\n  const inventaire = (finale.output ?? agent.output)?.inventaire_existant;\n  (Array.isArray(inventaire) ? inventaire : []).forEach((element, i) => {\n    const citation = String(element?.citation ?? '');\n    // Une citation abrégée par des points de suspension est vérifiée morceau par morceau.\n    const morceaux = citation.split(/…|\\.\\.\\./).map(compacter).filter((m) => m.length >= 4);\n    const page = textesParPage.filter((p) => p.url === adresse(element?.source)).map((p) => p.texte).join(' ');\n    const texte = page || toutesLesPages;\n    if (!morceaux.length || !morceaux.every((m) => texte.includes(m))) {\n      avertissements.push({ terme: 'citation introuvable dans sa page : « ' + citation.slice(0, 80) + ' »', champ: 'inventaire_existant[' + i + ']' });\n    }\n  });\n  return [{ json: { avertissements, nb_pages } }];\n} catch (err) {\n  return [{ json: { avertissements: null, nb_pages: null, erreur_verification: String(err?.message ?? err) } }];\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3648,
+        -1204
+      ],
+      "id": "85b2c59d-0fa7-47fd-9866-309634223dda",
+      "name": "Vérifier termes réglementaires",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calcule la durée du proof-of-work en additionnant les heures des étapes (le modèle ne la fournit plus).\n// Si le total dépasse 8 h, le nœud suivant demande une correction au modèle.\nconst DUREE_MAX_HEURES = 8;\n// Marqueurs de révision : le proof-of-work final doit se lire comme une spécification autonome,\n// sans trace d'une version précédente, d'une réduction, d'un budget ou d'une durée cible.\nconst MARQUEURS = [\n  { terme: 'remplace', motif: 'remplace(?:nt)?' },\n  { terme: 'au lieu de', motif: \"au\\\\s+lieu\\\\s+d(?:e|u|es|['’])\" },\n  { terme: 'pour tenir', motif: 'pour\\\\s+tenir' },\n  { terme: 'budget', motif: 'budgets?' },\n  { terme: 'version précédente', motif: 'versions?\\\\s+précédentes?' },\n  { terme: 'initialement', motif: 'initialement' },\n  { terme: 'huit heures', motif: 'huit\\\\s+heures' },\n  { terme: '8 h', motif: '8\\\\s*(?:h|heures?)' },\n];\nconst marqueursDeRevision = (pow) => {\n  const trouves = [];\n  const parcourir = (valeur, chemin) => {\n    if (typeof valeur === 'string') {\n      const texte = valeur.normalize('NFC').replace(/[  ]/g, ' ');\n      for (const { terme, motif } of MARQUEURS) {\n        if (new RegExp('(?<![\\\\p{L}\\\\p{N}])(?:' + motif + ')(?![\\\\p{L}\\\\p{N}])', 'iu').test(texte)) {\n          trouves.push({ terme: 'marqueur de révision : « ' + terme + ' »', champ: 'proof_of_work.' + chemin });\n        }\n      }\n    } else if (Array.isArray(valeur)) valeur.forEach((v, i) => parcourir(v, chemin + '[' + i + ']'));\n    else if (valeur && typeof valeur === 'object') for (const [cle, v] of Object.entries(valeur)) parcourir(v, chemin ? chemin + '.' + cle : cle);\n  };\n  parcourir(pow ?? {}, '');\n  return trouves;\n};\nlet proof_of_work;\nlet avertissements = null;\nlet nb_pages = null;\ntry {\n  proof_of_work = $('Proposition proof-of-work').first().json.output ?? {};\n  const verification = $('Vérifier termes réglementaires').first().json ?? {};\n  avertissements = Array.isArray(verification.avertissements) ? [...verification.avertissements] : null;\n  nb_pages = verification.nb_pages ?? null;\n\n  const heures = (Array.isArray(proof_of_work.etapes) ? proof_of_work.etapes : [])\n    .map((etape) => Number(etape?.heures))\n    .filter((h) => Number.isFinite(h) && h > 0);\n  let duree_totale = null;\n  if (heures.length) {\n    duree_totale = Math.round(heures.reduce((somme, h) => somme + h, 0) * 10) / 10;\n    proof_of_work = { ...proof_of_work, duree_calculee_heures: duree_totale };\n  }\n  // Une piste signalée par la relecture et conservée ne doit jamais être retenue pour le proof-of-work.\n  const comparer = (s) => String(s ?? '').normalize('NFC').toLowerCase().replace(/\\s+/g, ' ').trim();\n  const exclues = $('Analyse finale').first().json.pistes_exclues_pow ?? [];\n  if (exclues.some((titre) => comparer(titre) === comparer(proof_of_work.piste_retenue))) {\n    avertissements = [...(avertissements ?? []), { terme: 'proof-of-work établi sur une piste signalée : ' + proof_of_work.piste_retenue, champ: 'proof_of_work.piste_retenue' }];\n  }\n  const depasse = duree_totale !== null && duree_totale > DUREE_MAX_HEURES;\n  // Sans réduction à venir, ce proof-of-work est le résultat final : ses marqueurs de révision sont signalés ici.\n  if (!depasse) {\n    const marqueurs = marqueursDeRevision(proof_of_work);\n    if (marqueurs.length) avertissements = [...(avertissements ?? []), ...marqueurs];\n  }\n  return [{ json: { proof_of_work, avertissements, nb_pages, tentatives_pow: 1, duree_totale, depasse } }];\n} catch (err) {\n  return [{ json: { proof_of_work, avertissements, nb_pages, tentatives_pow: 1, duree_totale: null, depasse: false, erreur_duree: String(err?.message ?? err) } }];\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4224,
+        -1328
+      ],
+      "id": "322b2d89-5da8-462a-8c03-8c091c9be0f0",
+      "name": "Calculer durée",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "8ffaf9c3-80d4-45bd-a528-de970fb40f53",
+              "leftValue": "={{ $json.depasse === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        4448,
+        -1328
+      ],
+      "id": "8990f5a9-93a6-4505-9a7c-5319da923d59",
+      "name": "Durée dépassée ?"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Spécification à réduire :\n{{ JSON.stringify($('Proposition proof-of-work').first().json.output, null, 2) }}\n\nDurée totale des étapes : {{ String($json.duree_totale).replace('.', ',') }} h.\nDurée maximale : 8 h.",
+        "hasOutputParser": true,
+        "messages": {
+          "messageValues": [
+            {
+              "message": "# Prompt — Réduction du proof-of-work\n\nTu reçois la spécification d'un prototype, la durée totale de ses étapes et la durée maximale à respecter.\nRéduis son périmètre pour que la somme des heures des étapes ne dépasse pas la durée maximale. Tu ne renvoies que les champs que tu peux modifier : le titre, l'objectif, la valeur pour l'entreprise, la justification et la piste retenue sont conservés tels quels.\n\n## Règles\n- Retire des éléments du périmètre et les étapes correspondantes ; ne modifie pas les heures des étapes conservées.\n- Rédige les champs comme une spécification autonome, lue pour la première fois. Ne mentionne jamais une version précédente, une réduction, un budget ni une durée cible.\n- Le prototype reste démontrable seul, et cohérent avec le titre et l'objectif fournis.\n- Rédige en français, de façon concise et concrète ; évite les anglicismes quand un terme français existe (fidélité client, désabonnement, parcours, maquette, rappels). N'invente pas de nom de produit ou de marque pour l'entreprise.\n- Écris des phrases complètes et naturelles. N'écris aucune URL ni aucune citation entre crochets.\n- Formule les éléments de périmètre positivement : pas de partiel ni de limité.\n- Au plus 4 éléments de périmètre, 3 éléments hors périmètre et 5 étapes.\n- Longueurs maximales : critère de succès en une phrase de 30 mots ; chaque élément de liste en 20 mots.\n\n## Format de sortie\nRéponds uniquement avec un JSON :\n- perimetre (liste de 2 à 4 éléments)\n- hors_perimetre (liste de 2 à 3 éléments)\n- etapes : liste ordonnée de 2 à 5 objets { etape, heures (durée de l'étape, en heures, inchangée pour une étape conservée) }\n- critere_de_succes (1 phrase vérifiable)"
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        4672,
+        -1204
+      ],
+      "id": "54dc1cdb-2f01-42ad-bcc8-d353eb11bc4c",
+      "name": "Corriger proof-of-work",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Réduction du proof-of-work : seuls le périmètre, le hors-périmètre, les étapes et le critère de succès viennent\n// de la réduction ; le titre, l'objectif, la valeur pour l'entreprise, la justification, la piste retenue et la\n// stack sont recopiés du premier jet. Le résultat réduit est conservé même s'il dépasse encore 8 h, avec un\n// avertissement. Si la réduction a échoué, le premier jet est conservé, avec le même avertissement.\nconst DUREE_MAX_HEURES = 8;\n// Marqueurs de révision : le proof-of-work final doit se lire comme une spécification autonome,\n// sans trace d'une version précédente, d'une réduction, d'un budget ou d'une durée cible.\nconst MARQUEURS = [\n  { terme: 'remplace', motif: 'remplace(?:nt)?' },\n  { terme: 'au lieu de', motif: \"au\\\\s+lieu\\\\s+d(?:e|u|es|['’])\" },\n  { terme: 'pour tenir', motif: 'pour\\\\s+tenir' },\n  { terme: 'budget', motif: 'budgets?' },\n  { terme: 'version précédente', motif: 'versions?\\\\s+précédentes?' },\n  { terme: 'initialement', motif: 'initialement' },\n  { terme: 'huit heures', motif: 'huit\\\\s+heures' },\n  { terme: '8 h', motif: '8\\\\s*(?:h|heures?)' },\n];\nconst marqueursDeRevision = (pow) => {\n  const trouves = [];\n  const parcourir = (valeur, chemin) => {\n    if (typeof valeur === 'string') {\n      const texte = valeur.normalize('NFC').replace(/[  ]/g, ' ');\n      for (const { terme, motif } of MARQUEURS) {\n        if (new RegExp('(?<![\\\\p{L}\\\\p{N}])(?:' + motif + ')(?![\\\\p{L}\\\\p{N}])', 'iu').test(texte)) {\n          trouves.push({ terme: 'marqueur de révision : « ' + terme + ' »', champ: 'proof_of_work.' + chemin });\n        }\n      }\n    } else if (Array.isArray(valeur)) valeur.forEach((v, i) => parcourir(v, chemin + '[' + i + ']'));\n    else if (valeur && typeof valeur === 'object') for (const [cle, v] of Object.entries(valeur)) parcourir(v, chemin ? chemin + '.' + cle : cle);\n  };\n  parcourir(pow ?? {}, '');\n  return trouves;\n};\nconst avertir = (liste, total, suffixe) => [...(liste ?? []), { terme: 'durée totale de ' + String(total).replace('.', ',') + ' h' + suffixe + ' (plus de ' + DUREE_MAX_HEURES + ' h)', champ: 'proof_of_work.etapes' }];\nconst premier = $('Calculer durée').first().json;\nlet resultat = {\n  proof_of_work: premier.proof_of_work,\n  avertissements: avertir(premier.avertissements, premier.duree_totale, ''),\n  nb_pages: premier.nb_pages ?? null,\n  tentatives_pow: 2,\n};\ntry {\n  const corrige = $('Corriger proof-of-work').first().json.output;\n  const heures = (Array.isArray(corrige?.etapes) ? corrige.etapes : [])\n    .map((etape) => Number(etape?.heures))\n    .filter((h) => Number.isFinite(h) && h > 0);\n  if (heures.length) {\n    const total = Math.round(heures.reduce((somme, h) => somme + h, 0) * 10) / 10;\n    const jet = premier.proof_of_work ?? {};\n    resultat.proof_of_work = {\n      ...jet,\n      perimetre: Array.isArray(corrige.perimetre) && corrige.perimetre.length ? corrige.perimetre : jet.perimetre,\n      hors_perimetre: Array.isArray(corrige.hors_perimetre) && corrige.hors_perimetre.length ? corrige.hors_perimetre : jet.hors_perimetre,\n      etapes: corrige.etapes,\n      critere_de_succes: typeof corrige.critere_de_succes === 'string' && corrige.critere_de_succes.trim() ? corrige.critere_de_succes : jet.critere_de_succes,\n      duree_calculee_heures: total,\n    };\n    resultat.avertissements = total > DUREE_MAX_HEURES ? avertir(premier.avertissements, total, ' après correction') : premier.avertissements ?? null;\n  }\n} catch (err) {\n  resultat.erreur_duree = String(err?.message ?? err);\n}\n// Marqueurs de révision du proof-of-work final.\nconst marqueurs = marqueursDeRevision(resultat.proof_of_work);\nif (marqueurs.length) resultat.avertissements = [...(resultat.avertissements ?? []), ...marqueurs];\nreturn [{ json: resultat }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5024,
+        -1204
+      ],
+      "id": "20110994-adc5-487f-9365-f9521142baae",
+      "name": "Recalculer durée",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Pistes :\n{{ JSON.stringify($json.output?.pistes ?? [], null, 2) }}\n\nInventaire de l'existant :\n{{ JSON.stringify($json.output?.inventaire_existant ?? [], null, 2) }}\n\nPoints forts :\n{{ JSON.stringify($json.output?.points_forts ?? [], null, 2) }}\n\nTexte des pages lues :\n{{ $('Texte des pages').first().json.texte_pages ?? '' }}",
+        "hasOutputParser": true,
+        "messages": {
+          "messageValues": [
+            {
+              "message": "# Prompt — Relecture critique des pistes\n\nTu relis une analyse produit avant sa remise. On te donne les pistes de développement proposées, l'inventaire de ce que le site propose déjà, les points forts retenus et le texte des pages du site qui ont été lues.\nPour chaque piste, indique si elle duplique l'existant et si elle ajoute un effort à l'utilisateur.\n\n## Règles\n- Une piste duplique l'existant si elle propose un élément déjà présent dans l'inventaire, si elle reproduit un point fort de l'analyse, ou si elle reprend une fonctionnalité, une offre ou un service déjà décrit dans le texte des pages.\n- Une piste qui prolonge l'existant, ou qui l'adapte à un autre public ou à un autre usage, ne le duplique pas.\n- Une piste doit réduire l'effort de l'utilisateur, pas en ajouter. Si elle demande une saisie ou une action nouvelle, vérifie d'abord si le système peut l'estimer lui-même (à partir de la ration, de l'historique ou des données existantes) et ne demander qu'une confirmation.\n- Signale toute piste qui ajoute une étape à l'utilisateur : une saisie ou une action nouvelle que le système pourrait estimer lui-même. Une simple confirmation d'une valeur proposée par le système n'est pas une étape ajoutée.\n- Appuie-toi uniquement sur l'inventaire, les points forts et le texte des pages fournis. Dans le doute, réponds que la piste ne duplique pas.\n- Rédige en français.\n\n## Format de sortie\nRéponds uniquement avec un JSON :\n- pistes : liste d'objets, un par piste, dans l'ordre reçu {\n    titre (repris tel quel),\n    duplique (true ou false),\n    element_existant (en une phrase, ce qui existe déjà et sur quelle page ; chaîne vide si duplique vaut false),\n    ajoute_effort (true si la piste ajoute une étape à l'utilisateur, false sinon),\n    effort_ajoute (en une phrase, la saisie ou l'action demandée et ce que le système pourrait estimer à la place ; chaîne vide si ajoute_effort vaut false)\n  }"
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        2496,
+        -1204
+      ],
+      "id": "fd20eed1-b3b7-4cd8-a384-59963a32c3c2",
+      "name": "Relecture critique",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"pistes\": {\n      \"type\": \"array\",\n      \"description\": \"Une entrée par piste, dans l'ordre reçu\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"titre\": {\n            \"type\": \"string\",\n            \"description\": \"Titre de la piste, repris tel quel\"\n          },\n          \"duplique\": {\n            \"type\": \"boolean\",\n            \"description\": \"true si la piste reproduit un point fort ou un élément déjà décrit dans les pages\"\n          },\n          \"element_existant\": {\n            \"type\": \"string\",\n            \"description\": \"En une phrase, ce qui existe déjà et sur quelle page ; chaîne vide si duplique vaut false\"\n          },\n          \"ajoute_effort\": {\n            \"type\": \"boolean\",\n            \"description\": \"true si la piste ajoute une étape à l'utilisateur (saisie ou action nouvelle que le système pourrait estimer lui-même)\"\n          },\n          \"effort_ajoute\": {\n            \"type\": \"string\",\n            \"description\": \"En une phrase, la saisie ou l'action demandée et ce que le système pourrait estimer à la place ; chaîne vide si ajoute_effort vaut false\"\n          }\n        },\n        \"required\": [\n          \"titre\",\n          \"duplique\",\n          \"element_existant\",\n          \"ajoute_effort\",\n          \"effort_ajoute\"\n        ],\n        \"additionalProperties\": false\n      }\n    }\n  },\n  \"required\": [\n    \"pistes\"\n  ],\n  \"additionalProperties\": false\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        2632,
+        -980
+      ],
+      "id": "7caf7d6b-c2bb-451a-bdc0-ce7c243ee6ff",
+      "name": "Schéma relecture"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f08f4253-d51d-4f42-b57f-9b574b6372ed",
+              "leftValue": "={{ ($json.output?.pistes ?? []).some((piste) => piste?.duplique === true || piste?.ajoute_effort === true) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2848,
+        -1204
+      ],
+      "id": "213d596c-3bc3-4b3c-a78f-7fbc27138991",
+      "name": "Pistes en doublon ?"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Analyse :\n{{ JSON.stringify($('Analyse brute').first().json.output, null, 2) }}\n\nContexte fourni : {{ $('Créer analyse').first().json.contexte || 'aucun' }}\n\nPistes à remplacer :\n{{ JSON.stringify(($json.output?.pistes ?? []).filter((piste) => piste?.duplique === true || piste?.ajoute_effort === true), null, 2) }}\n\nTexte des pages lues :\n{{ $('Texte des pages').first().json.texte_pages ?? '' }}",
+        "hasOutputParser": true,
+        "messages": {
+          "messageValues": [
+            {
+              "message": "# Prompt — Régénération de pistes\n\nTu reçois une analyse produit, parfois un contexte, le texte des pages du site qui ont été lues, et la liste des pistes à remplacer : chacune duplique un élément existant ou ajoute un effort à l'utilisateur, et le motif t'est indiqué.\nPropose une piste de remplacement pour chacune.\n\n## Règles\n- La nouvelle piste ne reproduit ni un point fort de l'analyse, ni un élément de son `inventaire_existant`, ni une fonctionnalité décrite dans les pages lues, ni une autre piste de l'analyse : elle ajoute quelque chose à l'existant.\n- Une piste doit réduire l'effort de l'utilisateur, pas en ajouter. Si elle demande une saisie ou une action nouvelle, vérifie d'abord si le système peut l'estimer lui-même (à partir de la ration, de l'historique ou des données existantes) et ne demander qu'une confirmation.\n- Elle s'appuie sur un élément propre à l'entreprise, visible dans les pages lues : pas de piste générique applicable à n'importe quelle entreprise (par exemple « mesurer les gains »). Elle ne porte pas sur un angle de `perimetre_non_couvert`.\n- Elle s'appuie sur les pages lues. Si un contexte est fourni, il sert uniquement à la choisir ; ne le présente jamais comme une information sur l'entreprise ou sur le marché.\n- Formule-la positivement, comme une opportunité. N'emploie jamais les mots : problème, défaut, faiblesse, manque, échec, friction, critique.\n- N'écris aucune URL ni aucune citation entre crochets dans les champs de texte. Le champ `source` contient uniquement l'URL exacte d'une page de `pages_analysees`.\n- Réglementation : ne nomme aucune norme, organisme, autorité ni obligation légale, et n'emploie pas les mots certification, homologation ou agrément, s'ils ne figurent pas textuellement dans les pages lues.\n- Désigne les clients par leur métier précis.\n- Rédige en français, de façon concise ; évite les anglicismes quand un terme français existe (fidélité client, désabonnement, parcours, maquette, rappels). N'invente pas de nom de produit ou de marque pour l'entreprise.\n\n## Format de sortie\nRéponds uniquement avec un JSON :\n- pistes : liste d'objets, un par piste à remplacer, dans l'ordre reçu {\n    remplace (titre de la piste remplacée, repris tel quel),\n    titre (court, orienté action),\n    opportunite (ce que l'entreprise pourrait gagner, formulé positivement),\n    existant (les éléments de inventaire_existant sur ce sujet, en nommant la page source, ou « rien de visible »),\n    apport (ce que la piste ajoute à l'existant),\n    proposition (la piste concrète),\n    impact (\"fort\"|\"moyen\"|\"faible\"),\n    effort (\"fort\"|\"moyen\"|\"faible\"),\n    source (URL exacte de la page de pages_analysees qui inspire la piste)\n  }"
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        3072,
+        -1328
+      ],
+      "id": "376f34f1-ed11-4b3c-8207-8caea712145c",
+      "name": "Régénérer pistes",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"pistes\": {\n      \"type\": \"array\",\n      \"description\": \"Une piste de remplacement par piste à remplacer, dans l'ordre reçu\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"remplace\": {\n            \"type\": \"string\",\n            \"description\": \"Titre de la piste remplacée, repris tel quel\"\n          },\n          \"titre\": {\n            \"type\": \"string\",\n            \"description\": \"Court, orienté action\"\n          },\n          \"opportunite\": {\n            \"type\": \"string\",\n            \"description\": \"Ce que l'entreprise pourrait gagner, formulé positivement\"\n          },\n          \"existant\": {\n            \"type\": \"string\",\n            \"description\": \"Les éléments de inventaire_existant sur ce sujet, en nommant la page source, ou « rien de visible »\"\n          },\n          \"apport\": {\n            \"type\": \"string\",\n            \"description\": \"Ce que la piste ajoute à l'existant\"\n          },\n          \"proposition\": {\n            \"type\": \"string\",\n            \"description\": \"La piste concrète\"\n          },\n          \"impact\": {\n            \"type\": \"string\",\n            \"enum\": [\n              \"fort\",\n              \"moyen\",\n              \"faible\"\n            ]\n          },\n          \"effort\": {\n            \"type\": \"string\",\n            \"enum\": [\n              \"fort\",\n              \"moyen\",\n              \"faible\"\n            ]\n          },\n          \"source\": {\n            \"type\": \"string\",\n            \"description\": \"URL exacte de la page de pages_analysees qui inspire la piste, sans crochets ni autre texte\"\n          }\n        },\n        \"required\": [\n          \"remplace\",\n          \"titre\",\n          \"opportunite\",\n          \"existant\",\n          \"apport\",\n          \"proposition\",\n          \"impact\",\n          \"effort\",\n          \"source\"\n        ],\n        \"additionalProperties\": false\n      }\n    }\n  },\n  \"required\": [\n    \"pistes\"\n  ],\n  \"additionalProperties\": false\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        3208,
+        -1104
+      ],
+      "id": "c9011bde-6ec9-42eb-afec-07eb0ac29315",
+      "name": "Schéma régénération"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Analyse finale : analyse rédigée, où les pistes signalées par la relecture (doublon de l'existant ou effort\n// ajouté à l'utilisateur) sont remplacées\n// par leur version régénérée. Une piste en doublon qui n'a pas pu être régénérée est conservée,\n// avec un avertissement. En cas d'erreur, la sortie de l'agent est reprise telle quelle.\nconst comparer = (s) => String(s ?? '').normalize('NFC').toLowerCase().replace(/\\s+/g, ' ').trim();\nlet output = $('Analyse brute').first().json.output ?? {};\nconst avertissements_relecture = [];\nconst pistes_signalees = [];\nlet output_pow;\nlet pistes_exclues_pow = [];\nlet erreur_relecture;\ntry {\n  const relecture = $('Relecture critique').first().json.output;\n  const doublons = (Array.isArray(relecture?.pistes) ? relecture.pistes : []).filter((piste) => piste?.duplique === true || piste?.ajoute_effort === true);\n  if (doublons.length) {\n    let nouvelles = [];\n    if ($('Régénérer pistes').isExecuted) {\n      const regeneration = $('Régénérer pistes').first().json.output;\n      nouvelles = Array.isArray(regeneration?.pistes) ? regeneration.pistes : [];\n    }\n    const pistes = [...(Array.isArray(output.pistes) ? output.pistes : [])];\n    doublons.forEach((doublon, rang) => {\n      const index = pistes.findIndex((piste) => comparer(piste?.titre) === comparer(doublon.titre));\n      // Correspondance par le titre remplacé, sinon par le rang quand les deux listes ont la même longueur.\n      const nouvelle = nouvelles.find((n) => comparer(n?.remplace) === comparer(doublon.titre)) ?? (nouvelles.length === doublons.length ? nouvelles[rang] : undefined);\n      const motif = doublon.duplique === true ? 'doublon' : 'effort';\n      const signalement = { titre: doublon.titre, motif, element_existant: doublon.element_existant ?? '', effort_ajoute: doublon.effort_ajoute ?? '' };\n      if (index >= 0 && nouvelle?.titre && nouvelle?.proposition) {\n        const { remplace, ...piste } = nouvelle;\n        pistes[index] = piste;\n        pistes_signalees.push({ ...signalement, action: 'régénérée', nouveau_titre: piste.titre });\n      } else {\n        avertissements_relecture.push({ terme: (motif === 'doublon' ? \"piste proche de l'existant : \" : \"piste qui ajoute un effort à l'utilisateur : \") + doublon.titre, champ: index >= 0 ? 'pistes[' + index + ']' : 'pistes' });\n        pistes_signalees.push({ ...signalement, action: 'conservée' });\n      }\n    });\n    output = { ...output, pistes };\n    // Une piste signalée et conservée ne peut pas être retenue pour le proof-of-work :\n    // elle est retirée de l'analyse transmise au modèle, sauf s'il ne resterait aucune piste.\n    pistes_exclues_pow = pistes_signalees.filter((s) => s.action === 'conservée').map((s) => s.titre);\n    const eligibles = pistes.filter((piste) => !pistes_exclues_pow.some((titre) => comparer(titre) === comparer(piste?.titre)));\n    if (pistes_exclues_pow.length && eligibles.length) output_pow = { ...output, pistes: eligibles };\n    else if (pistes_exclues_pow.length) avertissements_relecture.push({ terme: 'toutes les pistes sont signalées par la relecture : proof-of-work établi sur une piste signalée', champ: 'pistes' });\n  }\n} catch (err) {\n  erreur_relecture = String(err?.message ?? err);\n}\nreturn [{ json: { output, output_pow: output_pow ?? output, pistes_exclues_pow, avertissements_relecture, pistes_signalees, erreur_relecture } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3424,
+        -1204
+      ],
+      "id": "670c6544-9109-4887-93db-aba6979a174a",
+      "name": "Analyse finale",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Liste blanche des modèles : copie de loupe/config/modeles.json, à reporter ici à chaque modification du fichier.\n// Le modèle de rédaction vient du champ caché « modele » du formulaire, sinon de la configuration.\n// Tout modèle absent de la liste, ou au-delà du tarif d'entrée maximal, fait passer l'analyse en erreur.\nconst CONFIG = {\n  \"devise\": \"USD\",\n  \"source_tarifs\": \"https://developers.openai.com/api/docs/pricing\",\n  \"date_tarifs\": \"2026-10-12\",\n  \"prix_max_entree_par_million\": 3,\n  \"seuil_avertissement_cout\": 0.3,\n  \"modele_exploration\": \"gpt-5-mini\",\n  \"modele_redaction\": \"gpt-6.1-sol\",\n  \"modeles\": {\n    \"gpt-5-mini\": {\n      \"entree\": 0.25,\n      \"entree_cache\": 0.025,\n      \"sortie\": 2.0\n    },\n    \"gpt-6.1-sol\": {\n      \"entree\": 2.0,\n      \"entree_cache\": 0.1,\n      \"sortie\": 10.0\n    },\n    \"gpt-5.6-terra\": {\n      \"entree\": 2.0,\n      \"entree_cache\": 0.2,\n      \"sortie\": 12.0\n    }\n  }\n};\n\nconst MESSAGE = 'Analyse impossible : modèle non autorisé.';\nlet modele_exploration;\nlet modele_redaction;\ntry {\n  modele_exploration = String(CONFIG.modele_exploration ?? '');\n  const demande = String($('Formulaire').first().json.modele ?? '').trim();\n  modele_redaction = demande || String(CONFIG.modele_redaction ?? '');\n  const refus = (modele) => {\n    if (!modele || !Object.prototype.hasOwnProperty.call(CONFIG.modeles, modele)) return 'modèle non autorisé : ' + (modele || '(vide)');\n    const entree = Number(CONFIG.modeles[modele]?.entree);\n    if (!(entree <= Number(CONFIG.prix_max_entree_par_million))) return \"modèle non autorisé (tarif d'entrée au-delà du plafond) : \" + modele;\n    return null;\n  };\n  const erreur = refus(modele_exploration) ?? refus(modele_redaction);\n  if (erreur) return [{ json: { autorise: false, modele_exploration, modele_redaction, error: erreur, message_page: MESSAGE } }];\n  return [{ json: { autorise: true, modele_exploration, modele_redaction } }];\n} catch (err) {\n  return [{ json: { autorise: false, modele_exploration, modele_redaction, error: 'modèle non autorisé (configuration illisible) : ' + String(err?.message ?? err), message_page: MESSAGE } }];\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        -616
+      ],
+      "id": "f14f06a9-b6c0-4c07-87b1-21a2dc0b5cdc",
+      "name": "Configuration modèles"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "13044820-173f-4993-a2d6-e09aefdc940f",
+              "leftValue": "={{ $json.autorise === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        896,
+        -616
+      ],
+      "id": "1a6abe4d-b3a5-4685-a5da-a3077343e3d2",
+      "name": "Modèle autorisé ?"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Texte des pages lues par l'agent d'exploration, chaque page précédée de son URL :\n// c'est ce que reçoivent le modèle de rédaction et la relecture critique.\n// Les lectures en échec (« Page inaccessible… », « Ce lien est un fichier… ») sont écartées et listées à part.\nconst ECHEC = /^\\s*(Page inaccessible|Ce lien est un fichier|There was an error)/i;\n// L'outil renvoie son texte dans une enveloppe JSON ([{\"response\":\"…\"}]) : on en extrait le texte.\nconst deballer = (observation) => {\n  const brut = typeof observation === 'string' ? observation : JSON.stringify(observation ?? '');\n  try {\n    const valeur = JSON.parse(brut);\n    const textes = (Array.isArray(valeur) ? valeur : [valeur]).map((x) => (x && typeof x === 'object' ? x.response ?? x.data : x)).filter((x) => typeof x === 'string');\n    if (textes.length) return textes.join('\\n');\n  } catch (err) {\n    // pas du JSON : texte brut\n  }\n  return brut;\n};\nconst etapes = $('Agent exploration').first().json.intermediateSteps;\nconst pages = [];\nconst pages_en_echec = [];\nfor (const etape of Array.isArray(etapes) ? etapes : []) {\n  const entree = etape?.action?.toolInput;\n  const url = String((entree && typeof entree === 'object' ? entree.url ?? entree.query : entree) ?? 'page');\n  const observation = deballer(etape?.observation);\n  if (observation.trim() === '' || ECHEC.test(observation)) pages_en_echec.push({ url, message: observation.trim().slice(0, 120) });\n  else pages.push({ url, texte: observation.slice(0, 15000) });\n}\nif (!pages.length) throw new Error(\"aucune page n'a pu être lue\");\nreturn [{ json: { texte_pages: pages.map((page) => '### ' + page.url + '\\n' + page.texte).join('\\n\\n'), pages_lues: pages.map((page) => page.url), nb_pages: pages.length, pages_en_echec } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1696,
+        -884
+      ],
+      "id": "f8fdbbe7-5982-4089-8697-49a031ec07c9",
+      "name": "Texte des pages",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Entreprise : {{ $('Créer analyse').first().json.entreprise }}\nURL du site : {{ $('Créer analyse').first().json.url }}\nContexte fourni : {{ $('Créer analyse').first().json.contexte || 'aucun' }}\n\nInventaire de ce que le site propose déjà :\n{{ JSON.stringify($('Agent exploration').first().json.output?.inventaire_existant ?? [], null, 2) }}\n\nTexte des pages lues, chaque page précédée de son URL :\n\n{{ $json.texte_pages ?? '' }}",
+        "hasOutputParser": true,
+        "messages": {
+          "messageValues": [
+            {
+              "message": "# Prompt — Rédaction de l'analyse\n\nTu es un product builder expérimenté et bienveillant. On te donne le nom d'une entreprise et l'URL de son site, parfois un contexte (pays, secteurs visés, priorités ou texte de référence), l'inventaire de ce que le site propose déjà et le texte des pages qui ont été lues.\nTon objectif : comprendre son produit et sa place sur son marché, puis proposer des pistes de développement constructives. Tu ne lis aucune autre page.\n\n## Contexte fourni\n- Le contexte sert uniquement à choisir et prioriser les pistes.\n- Ne le reformule jamais et ne le présente jamais comme une information sur l'entreprise ou sur le marché, dans aucun champ.\n- `contexte_resume` tient en une ligne, sans citer le texte collé et sans préfixe « Contexte : ». Sans contexte, laisse-le vide.\n- `perimetre_non_couvert` liste brièvement les angles du contexte que les pages lues ne permettent pas d'analyser. Ne comble jamais ces angles par des suppositions. Sans contexte, ou si tous ses angles sont couverts, laisse la liste vide.\n- Si le contexte vise un angle listé dans `perimetre_non_couvert`, `note_contexte` explique en une phrase comment les pistes y répondent malgré tout. Sinon, laisse `note_contexte` vide.\n\n## Ton et formulation\n- Chaque piste est une opportunité, formulée positivement. Varie les formulations d'ouverture : ne répète pas « Il serait possible de ».\n- N'emploie jamais les mots : problème, défaut, faiblesse, manque, échec, friction, critique.\n- Reconnais d'abord ce que l'entreprise fait bien : les points forts viennent avant les pistes.\n- Rédige en français, de façon concise, comme une note qu'on pourrait remettre à l'équipe produit ; évite les anglicismes quand un terme français existe (fidélité client, désabonnement, parcours, maquette, rappels). N'invente pas de nom de produit ou de marque pour l'entreprise.\n\n## Pistes\n- Une piste ne reproduit ni un point fort du même rapport, ni un élément de l'inventaire, ni une fonctionnalité décrite dans les pages lues : elle ajoute quelque chose à l'existant.\n- Le champ `existant` d'une piste reprend des éléments de l'inventaire.\n- Chaque piste s'appuie sur un élément propre à l'entreprise : pas de piste générique applicable à n'importe quelle entreprise (par exemple « mesurer les gains »).\n- Une piste doit réduire l'effort de l'utilisateur, pas en ajouter. Si elle demande une saisie ou une action nouvelle, vérifie d'abord si le système peut l'estimer lui-même (à partir de la ration, de l'historique ou des données existantes) et ne demander qu'une confirmation.\n- Au plus une piste peut porter sur un angle de `perimetre_non_couvert` ; elle est alors formulée comme une hypothèse. Les autres s'appuient sur des éléments visibles dans les pages lues.\n\n## Sources et fiabilité\n- Tout ce qui concerne l'entreprise (offre, positionnement, cible, points forts, pistes) doit venir du texte des pages fourni.\n- Les sources sont indiquées dans les champs prévus (source, existant). Dans la synthèse, la proposition de valeur, le marché et les pistes, ne nomme pas les pages : écris directement le fait.\n- Le champ `contexte_marche` est le seul où tu peux t'appuyer sur tes connaissances générales du secteur (tendances, attentes des clients, types d'acteurs). Reste général, ne cite aucun chiffre ni concurrent nommé que tu ne pourrais pas vérifier.\n- N'écris aucune URL ni aucune citation entre crochets dans les champs de texte. Le champ `source` d'un point fort ou d'une piste contient uniquement l'URL exacte d'une des pages fournies.\n- Réglementation : ne nomme aucune norme, organisme, autorité ni obligation légale, et n'emploie pas les mots certification, homologation ou agrément, s'ils ne figurent pas textuellement dans les pages analysées. S'ils n'y figurent pas, reste générique (« référentiels du secteur », « exigences de traçabilité du métier »).\n- Désigne les clients par leur métier précis (entreprises de maintenance incendie, pas services incendie).\n- Si une information manque, écris « non déterminé ».\n\n## Format de sortie\nRéponds uniquement avec un JSON conforme au schéma du parseur de sortie :\n- entreprise (texte)\n- synthese (2 à 3 phrases : ce que fait l'entreprise, pour qui, et l'opportunité principale)\n- proposition_de_valeur (1 à 2 phrases)\n- marche : objet {\n    segment (le marché sur lequel l'entreprise opère),\n    cible (utilisateurs et acheteurs),\n    positionnement (comment l'entreprise se présente et ce qu'elle revendique),\n    differenciation (ce qui la distingue selon son site),\n    modele_economique (texte ou « non déterminé »),\n    contexte_marche (2 à 3 phrases de tendances générales du secteur, issues de connaissances générales)\n  }\n- points_forts : liste de 2 à 3 objets { constat, source (URL exacte d'une des pages fournies) }\n- pistes : liste de 3 objets {\n    titre (court, orienté action),\n    opportunite (ce que l'entreprise pourrait gagner, formulé positivement),\n    existant (les éléments de l'inventaire sur ce sujet, en nommant la page source, ou « rien de visible »),\n    apport (ce que la piste ajoute à l'existant),\n    proposition (la piste concrète),\n    impact (\"fort\"|\"moyen\"|\"faible\"),\n    effort (\"fort\"|\"moyen\"|\"faible\"),\n    source (URL exacte de la page fournie qui inspire la piste)\n  }\n- perimetre_non_couvert (liste courte des angles du contexte que les pages lues ne permettent pas d'analyser ; liste vide sans contexte)\n- note_contexte (une phrase, seulement si le contexte vise un angle de perimetre_non_couvert : comment les pistes y répondent malgré tout ; chaîne vide sinon)\n- contexte_resume (une ligne qui résume le contexte fourni, sans citer le texte collé et sans préfixe « Contexte : » ; chaîne vide sans contexte)"
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        1920,
+        -1008
+      ],
+      "id": "cafe46ab-a726-432e-9cd2-7e3ba057d7ea",
+      "name": "Rédiger analyse",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Analyse brute : l'analyse du modèle de rédaction, complétée par l'inventaire et les pages de l'agent d'exploration.\n// Les étapes de l'agent (pages lues) sont transmises telles quelles aux nœuds suivants.\nconst exploration = $('Agent exploration').first().json;\nconst redaction = $('Rédiger analyse').first().json.output;\nif (!redaction || !Array.isArray(redaction.pistes) || !redaction.pistes.length) throw new Error(\"rédaction de l'analyse incomplète\");\n\nconst adresse = (u) => String(u ?? '').trim().replace(/\\/+$/, '');\nconst lues = ($('Texte des pages').first().json.pages_lues ?? []).map(adresse);\n// Pages analysées : celles que l'agent déclare et qui ont réellement été lues ; à défaut, les pages lues.\nlet pages_analysees = (Array.isArray(exploration.output?.pages_analysees) ? exploration.output.pages_analysees : [])\n  .filter((page) => page && lues.includes(adresse(page.url)));\nif (!pages_analysees.length) pages_analysees = lues.map((url) => ({ url, titre: url.split('/').filter(Boolean).pop() ?? url }));\n\nconst { pistes, perimetre_non_couvert, contexte_resume, ...debut } = redaction;\nconst output = {\n  ...debut,\n  inventaire_existant: Array.isArray(exploration.output?.inventaire_existant) ? exploration.output.inventaire_existant : [],\n  pistes,\n  perimetre_non_couvert: perimetre_non_couvert ?? [],\n  contexte_resume: contexte_resume ?? '',\n  pages_analysees,\n};\nreturn [{ json: { output, intermediateSteps: exploration.intermediateSteps ?? [], redige_par: $('Configuration modèles').first().json.modele_redaction, avertissements_redaction: [] } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2272,
+        -1080
+      ],
+      "id": "45734965-0487-44c9-9115-d95c421eb91e",
+      "name": "Analyse brute",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Configuration modèles').first().json.modele_redaction }}"
+        },
+        "responsesApiEnabled": false,
+        "options": {
+          "reasoningEffort": "low"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        3080,
+        -1104
+      ],
+      "id": "ef302f66-e97f-4289-9951-a3ab29bc2425",
+      "name": "Modèle rédaction",
+      "credentials": {
+        "openAiApi": {
+          "id": "REMPLACER-ID-CREDENTIAL-OPENAI",
+          "name": "OpenAI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"inventaire_existant\": {\n      \"type\": \"array\",\n      \"description\": \"5 à 12 éléments que le site propose déjà, dressés avant de rédiger les pistes\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"element\": {\n            \"type\": \"string\",\n            \"description\": \"Ce que le site propose déjà ; ajouter « (lien) » si l'élément n'est visible que par un lien\"\n          },\n          \"citation\": {\n            \"type\": \"string\",\n            \"description\": \"Extrait exact, de moins de 20 mots, de la page source\"\n          },\n          \"source\": {\n            \"type\": \"string\",\n            \"description\": \"URL exacte de la page lue d'où vient la citation\"\n          }\n        },\n        \"required\": [\n          \"element\",\n          \"citation\",\n          \"source\"\n        ],\n        \"additionalProperties\": false\n      }\n    },\n    \"pages_analysees\": {\n      \"type\": \"array\",\n      \"description\": \"Pages réellement lues\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"url\": {\n            \"type\": \"string\",\n            \"description\": \"URL de la page\"\n          },\n          \"titre\": {\n            \"type\": \"string\",\n            \"description\": \"Titre court de la page\"\n          }\n        },\n        \"required\": [\n          \"url\",\n          \"titre\"\n        ],\n        \"additionalProperties\": false\n      }\n    }\n  },\n  \"required\": [\n    \"inventaire_existant\",\n    \"pages_analysees\"\n  ],\n  \"additionalProperties\": false\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        1480,
+        -588
+      ],
+      "id": "918e1180-944a-46b8-bf7a-0c1dada10888",
+      "name": "Schéma exploration"
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"perimetre\": {\n      \"type\": \"array\",\n      \"description\": \"2 à 4 éléments\",\n      \"items\": {\n        \"type\": \"string\"\n      }\n    },\n    \"hors_perimetre\": {\n      \"type\": \"array\",\n      \"description\": \"2 à 3 éléments\",\n      \"items\": {\n        \"type\": \"string\"\n      }\n    },\n    \"etapes\": {\n      \"type\": \"array\",\n      \"description\": \"2 à 5 étapes ordonnées ; les heures d'une étape conservée ne changent pas\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"etape\": {\n            \"type\": \"string\",\n            \"description\": \"Description de l'étape\"\n          },\n          \"heures\": {\n            \"type\": \"number\",\n            \"description\": \"Durée estimée de l'étape, en heures\"\n          }\n        },\n        \"required\": [\n          \"etape\",\n          \"heures\"\n        ],\n        \"additionalProperties\": false\n      }\n    },\n    \"critere_de_succes\": {\n      \"type\": \"string\",\n      \"description\": \"1 phrase vérifiable\"\n    }\n  },\n  \"required\": [\n    \"perimetre\",\n    \"hors_perimetre\",\n    \"etapes\",\n    \"critere_de_succes\"\n  ],\n  \"additionalProperties\": false\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        4944,
+        -860
+      ],
+      "id": "dbcc46e6-adf3-4124-a21d-670ba6113801",
+      "name": "Schéma réduction"
+    }
+  ],
+  "connections": {
+    "Formulaire": {
+      "main": [
+        [
+          {
+            "node": "Clore analyses interrompues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Créer analyse": {
+      "main": [
+        [
+          {
+            "node": "Configuration modèles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vérifier le site": {
+      "main": [
+        [
+          {
+            "node": "Agent exploration",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Qualifier erreur site",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Proposition proof-of-work": {
+      "main": [
+        [
+          {
+            "node": "Calculer durée",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Enregistrer erreur",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enregistrer analyse": {
+      "main": [
+        [
+          {
+            "node": "Page résultat",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Enregistrer erreur",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enregistrer erreur": {
+      "main": [
+        [
+          {
+            "node": "Page erreur",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Modèle OpenAI": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Agent exploration",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Relecture critique",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lire une page": {
+      "ai_tool": [
+        [
+          {
+            "node": "Agent exploration",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schéma teardown": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Rédiger analyse",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schéma proof-of-work": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Proposition proof-of-work",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qualifier erreur site": {
+      "main": [
+        [
+          {
+            "node": "Enregistrer erreur",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clore analyses interrompues": {
+      "main": [
+        [
+          {
+            "node": "Créer analyse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vérifier termes réglementaires": {
+      "main": [
+        [
+          {
+            "node": "Proposition proof-of-work",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculer durée": {
+      "main": [
+        [
+          {
+            "node": "Durée dépassée ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Durée dépassée ?": {
+      "main": [
+        [
+          {
+            "node": "Corriger proof-of-work",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Enregistrer analyse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Corriger proof-of-work": {
+      "main": [
+        [
+          {
+            "node": "Recalculer durée",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recalculer durée": {
+      "main": [
+        [
+          {
+            "node": "Enregistrer analyse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Relecture critique": {
+      "main": [
+        [
+          {
+            "node": "Pistes en doublon ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pistes en doublon ?": {
+      "main": [
+        [
+          {
+            "node": "Régénérer pistes",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Analyse finale",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Régénérer pistes": {
+      "main": [
+        [
+          {
+            "node": "Analyse finale",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyse finale": {
+      "main": [
+        [
+          {
+            "node": "Vérifier termes réglementaires",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schéma relecture": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Relecture critique",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schéma régénération": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Régénérer pistes",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuration modèles": {
+      "main": [
+        [
+          {
+            "node": "Modèle autorisé ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Modèle autorisé ?": {
+      "main": [
+        [
+          {
+            "node": "Vérifier le site",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Enregistrer erreur",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Texte des pages": {
+      "main": [
+        [
+          {
+            "node": "Rédiger analyse",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Enregistrer erreur",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rédiger analyse": {
+      "main": [
+        [
+          {
+            "node": "Analyse brute",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Enregistrer erreur",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyse brute": {
+      "main": [
+        [
+          {
+            "node": "Relecture critique",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Enregistrer erreur",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Modèle rédaction": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Rédiger analyse",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Régénérer pistes",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Proposition proof-of-work",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Corriger proof-of-work",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent exploration": {
+      "main": [
+        [
+          {
+            "node": "Texte des pages",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Enregistrer erreur",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schéma exploration": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Agent exploration",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schéma réduction": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Corriger proof-of-work",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}
