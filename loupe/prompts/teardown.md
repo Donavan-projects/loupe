@@ -20,7 +20,7 @@ Ton objectif : comprendre son produit et sa place sur son marché, puis proposer
 - Une piste ne reproduit ni un point fort du même rapport, ni un élément de l'inventaire, ni une fonctionnalité décrite dans les pages lues : elle ajoute quelque chose à l'existant.
 - Le champ `existant` d'une piste reprend des éléments de l'inventaire.
 - Chaque piste s'appuie sur un élément propre à l'entreprise : pas de piste générique applicable à n'importe quelle entreprise (par exemple « mesurer les gains »).
-- Une piste doit réduire l'effort de l'utilisateur, pas en ajouter. Si elle demande une saisie ou une action nouvelle, vérifie d'abord si le système peut l'estimer lui-même (à partir de la ration, de l'historique ou des données existantes) et ne demander qu'une confirmation.
+- Une piste doit réduire l'effort de l'utilisateur, pas en ajouter. Si elle demande une saisie ou une action nouvelle, vérifie d'abord si le système peut l'estimer lui-même (à partir d'un calcul déjà proposé par le site, de l'historique ou des données existantes) et ne demander qu'une confirmation.
 - Au plus une piste peut porter sur un angle de `perimetre_non_couvert` ; elle est alors formulée comme une hypothèse. Les autres s'appuient sur des éléments visibles dans les pages lues.
 
 ## Sources et fiabilité
@@ -29,7 +29,7 @@ Ton objectif : comprendre son produit et sa place sur son marché, puis proposer
 - Le champ `contexte_marche` est le seul où tu peux t'appuyer sur tes connaissances générales du secteur (tendances, attentes des clients, types d'acteurs). Reste général, ne cite aucun chiffre ni concurrent nommé que tu ne pourrais pas vérifier.
 - N'écris aucune URL ni aucune citation entre crochets dans les champs de texte. Le champ `source` d'un point fort ou d'une piste contient uniquement l'URL exacte d'une des pages fournies.
 - Réglementation : ne nomme aucune norme, organisme, autorité ni obligation légale, et n'emploie pas les mots certification, homologation ou agrément, s'ils ne figurent pas textuellement dans les pages analysées. S'ils n'y figurent pas, reste générique (« référentiels du secteur », « exigences de traçabilité du métier »).
-- Désigne les clients par leur métier précis (entreprises de maintenance incendie, pas services incendie).
+- Désigne les clients par leur métier précis (agences immobilières indépendantes, pas immobilier).
 - Si une information manque, écris « non déterminé ».
 
 ## Format de sortie

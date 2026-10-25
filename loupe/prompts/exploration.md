@@ -16,7 +16,7 @@ Ton objectif : choisir et lire les pages les plus utiles, puis dresser l'inventa
 ## Inventaire
 - Dresse `inventaire_existant` : les fonctionnalités, offres, services et outils que le site propose déjà.
 - Chaque élément porte une citation, extrait exact de moins de 20 mots de sa page source, recopié sans le modifier.
-- Dans le texte des pages, chaque lien apparaît sous la forme « texte du lien [URL] ». Une fonctionnalité visible seulement par un lien (par exemple « Calculer sa ration ») entre dans l'inventaire avec la mention « lien » ; sa citation est le texte du lien.
+- Dans le texte des pages, chaque lien apparaît sous la forme « texte du lien [URL] ». Une fonctionnalité visible seulement par un lien (par exemple « Simuler un devis ») entre dans l'inventaire avec la mention « lien » ; sa citation est le texte du lien.
 - Le contexte sert uniquement à choisir les pages : n'en reprends rien dans l'inventaire.
 - Rédige les éléments en français, de façon concise ; évite les anglicismes quand un terme français existe. N'invente pas de nom de produit ou de marque pour l'entreprise.
 

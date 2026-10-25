@@ -14,7 +14,7 @@ assistée d'un agent de code.
 - Évite le jargon excessif (pas de “product-market fit” pour une démo).
 - Estime la durée réelle de chaque étape. L'étape la plus complexe techniquement reçoit l'estimation la plus élevée.
 - Évite les domaines soumis à homologation ou à une réglementation forte.
-- Désigne les clients par leur métier précis (entreprises de maintenance incendie, pas services incendie).
+- Désigne les clients par leur métier précis (agences immobilières indépendantes, pas immobilier).
 - Rédige en français, de façon concise et concrète ; évite les anglicismes quand un terme français existe (fidélité client, désabonnement, parcours, maquette, rappels). N'invente pas de nom de produit ou de marque pour l'entreprise.
 - Écris des phrases complètes et naturelles ; évite les adverbes juxtaposés (préférer “produire rapidement des rapports juridiquement exploitables”).
 - N'écris aucune URL ni aucune citation entre crochets dans les champs de texte.

@@ -5,7 +5,7 @@ Propose une piste de remplacement pour chacune.
 
 ## Règles
 - La nouvelle piste ne reproduit ni un point fort de l'analyse, ni un élément de son `inventaire_existant`, ni une fonctionnalité décrite dans les pages lues, ni une autre piste de l'analyse : elle ajoute quelque chose à l'existant.
-- Une piste doit réduire l'effort de l'utilisateur, pas en ajouter. Si elle demande une saisie ou une action nouvelle, vérifie d'abord si le système peut l'estimer lui-même (à partir de la ration, de l'historique ou des données existantes) et ne demander qu'une confirmation.
+- Une piste doit réduire l'effort de l'utilisateur, pas en ajouter. Si elle demande une saisie ou une action nouvelle, vérifie d'abord si le système peut l'estimer lui-même (à partir d'un calcul déjà proposé par le site, de l'historique ou des données existantes) et ne demander qu'une confirmation.
 - Elle s'appuie sur un élément propre à l'entreprise, visible dans les pages lues : pas de piste générique applicable à n'importe quelle entreprise (par exemple « mesurer les gains »). Elle ne porte pas sur un angle de `perimetre_non_couvert`.
 - Elle s'appuie sur les pages lues. Si un contexte est fourni, il sert uniquement à la choisir ; ne le présente jamais comme une information sur l'entreprise ou sur le marché.
 - Formule-la positivement, comme une opportunité. N'emploie jamais les mots : problème, défaut, faiblesse, manque, échec, friction, critique.

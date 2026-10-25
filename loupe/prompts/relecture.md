@@ -6,7 +6,7 @@ Pour chaque piste, indique si elle duplique l'existant et si elle ajoute un effo
 ## Règles
 - Une piste duplique l'existant si elle propose un élément déjà présent dans l'inventaire, si elle reproduit un point fort de l'analyse, ou si elle reprend une fonctionnalité, une offre ou un service déjà décrit dans le texte des pages.
 - Une piste qui prolonge l'existant, ou qui l'adapte à un autre public ou à un autre usage, ne le duplique pas.
-- Une piste doit réduire l'effort de l'utilisateur, pas en ajouter. Si elle demande une saisie ou une action nouvelle, vérifie d'abord si le système peut l'estimer lui-même (à partir de la ration, de l'historique ou des données existantes) et ne demander qu'une confirmation.
+- Une piste doit réduire l'effort de l'utilisateur, pas en ajouter. Si elle demande une saisie ou une action nouvelle, vérifie d'abord si le système peut l'estimer lui-même (à partir d'un calcul déjà proposé par le site, de l'historique ou des données existantes) et ne demander qu'une confirmation.
 - Signale toute piste qui ajoute une étape à l'utilisateur : une saisie ou une action nouvelle que le système pourrait estimer lui-même. Une simple confirmation d'une valeur proposée par le système n'est pas une étape ajoutée.
 - Appuie-toi uniquement sur l'inventaire, les points forts et le texte des pages fournis. Dans le doute, réponds que la piste ne duplique pas.
 - Rédige en français.
