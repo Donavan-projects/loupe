@@ -24,7 +24,7 @@ assistée d'un agent de code.
 - Longueurs maximales : objectif et critère de succès en une phrase de 30 mots ; chaque élément de liste en 20 mots ; stack suggérée en 15 mots.
 
 ## Format de sortie
-Réponds uniquement avec un JSON :
+Réponds uniquement avec un JSON conforme au schéma du parseur de sortie :
 - piste_retenue (titre repris de l'analyse)
 - justification_choix (1 à 2 phrases)
 - titre

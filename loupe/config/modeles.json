@@ -1,14 +1,15 @@
 {
   "devise": "USD",
   "source_tarifs": "https://developers.openai.com/api/docs/pricing",
-  "date_tarifs": "2026-10-12",
+  "date_tarifs": "2026-11-12",
   "prix_max_entree_par_million": 3,
   "seuil_avertissement_cout": 0.30,
-  "modele_exploration": "gpt-5-mini",
+  "modele_exploration": "gpt-6-luna",
   "modele_redaction": "gpt-6.1-sol",
+  "modele_relecture": "gpt-6.1-sol",
   "modeles": {
-    "gpt-5-mini": { "entree": 0.25, "entree_cache": 0.025, "sortie": 2.00 },
     "gpt-6.1-sol": { "entree": 2.00, "entree_cache": 0.10, "sortie": 10.00 },
-    "gpt-5.6-terra": { "entree": 2.00, "entree_cache": 0.20, "sortie": 12.00 }
+    "gpt-5.6-terra": { "entree": 2.00, "entree_cache": 0.20, "sortie": 12.00 },
+    "gpt-6-luna": { "entree": 0.10, "entree_cache": 0.01, "sortie": 0.50 }
   }
 }

@@ -6,42 +6,20 @@ L'ensemble tourne dans [n8n](https://n8n.io) : deux workflows, une base Postgres
 
 ## Ce que fait une analyse
 
-1. **Exploration** : un agent lit la page d'accueil et choisit trois autres pages utiles (cas clients, produit, aide, tarifs, à propos). Il dresse l'inventaire de ce que le site propose déjà, chaque élément appuyé par une citation exacte.
-2. **Rédaction** : un second modèle, configurable, rédige l'analyse à partir du texte des pages lues : synthèse, proposition de valeur, marché, points forts et trois pistes.
-3. **Relecture critique** : un appel indépendant signale les pistes qui reprennent l'existant ou qui ajoutent un effort à l'utilisateur ; elles sont régénérées une fois.
+1. **Exploration** : un agent (gpt-6-luna) lit la page d'accueil et choisit trois autres pages utiles (cas clients, produit, aide, tarifs, à propos). Il dresse l'inventaire de ce que le site propose déjà, chaque élément appuyé par une citation exacte.
+2. **Rédaction** : un second modèle, configurable (gpt-6.1-sol par défaut), rédige l'analyse à partir du texte des pages lues : synthèse, proposition de valeur, marché, points forts et trois pistes.
+3. **Relecture critique** : un appel indépendant, sur gpt-6.1-sol, signale les pistes qui reprennent l'existant ou qui ajoutent un effort à l'utilisateur ; elles sont régénérées une fois.
 4. **Proof-of-work** : la meilleure piste devient la spécification d'un prototype (périmètre, étapes chiffrées en heures, critère de succès). Si le total dépasse 8 h, une seconde passe réduit le périmètre.
-5. **Contrôles** : du code vérifie les citations, les termes réglementaires, les sigles, la durée et les traces de révision, et enregistre des avertissements.
+5. **Contrôles** : du code vérifie les citations, les termes réglementaires, les sigles, la durée et les traces de révision, et enregistre des avertissements. Un contrôle qui n'a pas pu être fait est signalé comme tel.
 6. **Rapport** : la page de fin donne la synthèse et un lien vers le rapport complet, servi par le second workflow.
 
 ## Architecture
 
-```mermaid
-flowchart TD
-    F[Formulaire n8n<br/>entreprise, URL, contexte] --> C[Créer l'analyse<br/>Postgres]
-    C --> M{Modèle autorisé ?<br/>liste blanche}
-    M -- non --> E[Analyse en erreur]
-    M -- oui --> V{Site accessible ?}
-    V -- non --> E
-    V -- oui --> X[Agent d'exploration<br/>gpt-5-mini + outil « Lire une page »]
-    X --> R[Rédaction de l'analyse<br/>modèle de rédaction]
-    R --> L[Relecture critique]
-    L -- piste signalée --> G[Régénération]
-    G --> A[Analyse finale]
-    L -- rien à signaler --> A
-    A --> T[Contrôles en code<br/>citations, termes, sigles]
-    T --> P[Proof-of-work]
-    P --> D{Plus de 8 h ?}
-    D -- oui --> Rd[Réduction du périmètre]
-    Rd --> S
-    D -- non --> S[Enregistrer<br/>Postgres]
-    S --> PF[Page de fin<br/>synthèse + lien]
-    PF -.-> W[Workflow « Loupe — Rapport »<br/>webhook → HTML A4]
-    E --> PE[Page d'erreur]
-```
+![Architecture de Loupe : formulaire, exploration, rédaction, relecture, proof-of-work, contrôles et rapport](loupe-architecture-v4.png)
 
 | Élément | Rôle |
 |---|---|
-| `workflows/loupe-analyse.json` | Formulaire, exploration, rédaction, relecture, proof-of-work, contrôles (34 nœuds) |
+| `workflows/loupe-analyse.json` | Formulaire, exploration, rédaction, relecture, proof-of-work, contrôles (35 nœuds) |
 | `workflows/loupe-rapport.json` | Webhook `GET /webhook/loupe-rapport?id=…` qui renvoie le rapport HTML |
 | `loupe/prompts/` | Prompts d'exploration, de rédaction, de relecture, de régénération, de proof-of-work et de réduction |
 | `loupe/config/` | Liste blanche des modèles avec leurs tarifs, sigles admis par le vérificateur |
@@ -65,16 +43,16 @@ Proof-of-work retenu : « Démonstration de reprise depuis une commande », 7,5 
 
 ## Chiffres clés
 
-Mesures faites sur l'instance de développement en octobre 2026, avec gpt-5-mini pour l'exploration et gpt-6.1-sol pour la rédaction.
+Mesures faites sur l'instance de développement en novembre 2026, avec gpt-6-luna pour l'exploration et gpt-6.1-sol pour la rédaction et la relecture.
 
 | Mesure | Valeur |
 |---|---|
-| Durée d'une analyse | 60 à 136 s sur les quatre dernières analyses |
+| Durée d'une analyse | 65 à 86 s sur les trois dernières analyses |
 | Pages lues par analyse | 4 |
-| Coût d'une analyse | au moins 0,08 à 0,17 $ (voir la limite ci-dessous) |
-| Proof-of-work, premier jet | 7,5 à 14 h, ramené à 8 h au plus par la réduction |
+| Coût d'une analyse | environ 0,11 $ : au moins 0,107 à 0,115 $ (voir la limite ci-dessous) |
+| Proof-of-work, premier jet | 7,5 à 9,5 h, ramené à 8 h au plus par la réduction |
 | Rapport imprimé | 2 ou 3 pages A4, vérifié sur 38 analyses |
-| Appels au modèle par analyse | 6 à 9, dont plusieurs tours de l'agent d'exploration |
+| Appels au modèle par analyse | 6 ou 7, dont les tours de l'agent d'exploration |
 
 Le coût est un minimum : n8n ne conserve les tokens réellement facturés que pour les appels faits en Chat Completions. Pour les autres, il garde une estimation qui ignore les tokens de raisonnement.
 
@@ -101,14 +79,28 @@ Prérequis : Docker avec Compose, et une clé d'API OpenAI donnant accès aux mo
    - en production : activer le workflow, puis utiliser http://localhost:5678/form/loupe-analyse.
 8. Facultatif : relancer les exemples et comparer les résultats (workflow actif, `N8N_API_KEY` et `LOUPE_WORKFLOW_ID` renseignés dans `.env`) :
    ```bash
-   python3 loupe/tests/lancer.py --modele gpt-5-mini
+   python3 loupe/tests/lancer.py                              # modèles par défaut
+   python3 loupe/tests/lancer.py --modele gpt-5.6-terra       # autre modèle de rédaction
+   python3 loupe/tests/lancer.py --exploration gpt-6-luna     # modèle d'exploration explicite
    ```
 
 Pour changer de modèle, modifier `loupe/config/modeles.json`, puis reporter son contenu dans le nœud « Configuration modèles » du workflow, qui en garde une copie.
 
+## Migration de gpt-5-mini vers gpt-6-luna
+
+gpt-5-mini ferme le 11 décembre 2026. Avant de le retirer de la liste blanche, deux sites du jeu de test ont été analysés à nouveau avec l'exploration sur gpt-6-luna, puis comparés à leur analyse précédente sur sept critères : pages choisies, pages en échec, éléments d'inventaire, citations rejetées par le vérificateur, erreurs d'outil, coût et durée.
+
+- **Exploration** : quatre pages lues sur chaque site, aucune en échec, aucune erreur d'outil, aucune citation rejetée (contre deux auparavant sur l'un des sites), 10 à 12 éléments d'inventaire. Le coût de l'exploration baisse d'environ 60 %.
+- **Relecture** : passée sur gpt-6.1-sol en même temps, elle a d'abord échoué. Le modèle suivait le prompt à la lettre et renvoyait un JSON sans l'enveloppe attendue par le parseur de n8n. Les prompts demandent maintenant un JSON « conforme au schéma du parseur de sortie », et la relecture a une seconde tentative.
+- **Résultat** : relecture vérifiée sur une nouvelle analyse, pour un coût d'environ 0,11 $, contre 0,08 à 0,09 $ avant. La relecture plus capable coûte plus que ce que l'exploration fait gagner.
+
+## Contrôles en échec
+
+Un contrôle qui échoue ne doit jamais ressembler à un contrôle réussi. La relecture critique, la vérification des termes et le calcul de la durée continuent l'analyse en cas d'erreur, mais enregistrent alors un avertissement explicite (« relecture non effectuée », « vérification des termes non effectuée », « calcul de la durée non effectué »). La colonne `relecture` de la table vaut `effectuee` ou `echec`, et le script de test affiche « échec » au lieu de 0 dans les colonnes concernées.
+
 ## Décisions principales
 
-- **Exploration et rédaction séparées.** Un modèle économique choisit et lit les pages ; un modèle plus capable rédige. Le modèle de rédaction se choisit par analyse, dans une liste blanche avec un plafond de prix en entrée.
+- **Exploration et rédaction séparées.** Un modèle économique choisit et lit les pages ; un modèle plus capable rédige et relit. Les modèles d'exploration et de rédaction se choisissent par analyse, dans une liste blanche avec un plafond de prix en entrée.
 - **Contrôles en code plutôt qu'en consignes.** Ce qui peut se vérifier se vérifie hors du modèle : citations retrouvées dans la page source, termes réglementaires et sigles absents des pages, durée du proof-of-work calculée par addition, traces de révision dans le texte final. Les écarts deviennent des avertissements enregistrés avec l'analyse.
 - **Une seconde lecture indépendante.** La relecture critique ne voit que les pistes, l'inventaire et le texte des pages, et signale les doublons de l'existant et les pistes qui ajoutent un effort à l'utilisateur. Une piste signalée qui n'a pas pu être régénérée n'est jamais retenue pour le proof-of-work.
 - **Des échecs qui restent courts.** L'outil de lecture renvoie « Page inaccessible (404) : non lue » au lieu du contenu d'une page d'erreur, qui pouvait saturer le contexte du modèle. Chaque appel au modèle a une sortie d'erreur ou un repli, et une analyse interrompue est close au démarrage de la suivante.

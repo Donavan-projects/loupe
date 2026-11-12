@@ -14,7 +14,7 @@ Réduis son périmètre pour que la somme des heures des étapes ne dépasse pas
 - Longueurs maximales : critère de succès en une phrase de 30 mots ; chaque élément de liste en 20 mots.
 
 ## Format de sortie
-Réponds uniquement avec un JSON :
+Réponds uniquement avec un JSON conforme au schéma du parseur de sortie :
 - perimetre (liste de 2 à 4 éléments)
 - hors_perimetre (liste de 2 à 3 éléments)
 - etapes : liste ordonnée de 2 à 5 objets { etape, heures (durée de l'étape, en heures, inchangée pour une étape conservée) }

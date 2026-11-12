@@ -15,7 +15,7 @@ Propose une piste de remplacement pour chacune.
 - Rédige en français, de façon concise ; évite les anglicismes quand un terme français existe (fidélité client, désabonnement, parcours, maquette, rappels). N'invente pas de nom de produit ou de marque pour l'entreprise.
 
 ## Format de sortie
-Réponds uniquement avec un JSON :
+Réponds uniquement avec un JSON conforme au schéma du parseur de sortie :
 - pistes : liste d'objets, un par piste à remplacer, dans l'ordre reçu {
     remplace (titre de la piste remplacée, repris tel quel),
     titre (court, orienté action),

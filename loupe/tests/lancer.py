@@ -6,6 +6,7 @@ Usage, depuis la racine du dépôt :
   python3 loupe/tests/lancer.py --test                 # workflow inactif : cliquer sur « Execute workflow » avant chaque analyse
   python3 loupe/tests/lancer.py --seulement Decathlon  # une seule entreprise (option répétable)
   python3 loupe/tests/lancer.py --modele gpt-6.1-sol   # modèle de rédaction, pris dans loupe/config/modeles.json
+  python3 loupe/tests/lancer.py --exploration gpt-6-luna  # modèle d'exploration, pris dans la même liste
   python3 loupe/tests/lancer.py --executions 12,15     # tableau à partir d'exécutions existantes, sans rien relancer
 
 Après chaque analyse, les tokens et le coût estimé sont enregistrés dans loupe.analyses (--sans-enregistrement pour
@@ -29,16 +30,18 @@ BASE = os.environ.get('LOUPE_N8N_URL', 'http://localhost:5678').rstrip('/')
 # Identifiant du workflow « Loupe — Analyse » dans votre instance (visible dans son URL).
 WORKFLOW_ID = os.environ.get('LOUPE_WORKFLOW_ID', '')
 CHEMIN_FORMULAIRE = 'loupe-analyse'
-CHAMPS = ['entreprise', 'url', 'contexte', 'modele']  # ordre des champs du formulaire : field-0 … field-3
+CHAMPS = ['entreprise', 'url', 'contexte', 'modele', 'exploration']  # ordre des champs du formulaire : field-0 … field-4
 DELAI_MAX_S = 300
 EN_COURS = {'new', 'running'}
 NOEUDS_DE_FIN = {'Page résultat', 'Page erreur'}
-NOEUDS_MODELE = ['Modèle OpenAI', 'Modèle rédaction']
+NOEUDS_MODELE = ['Modèle OpenAI', 'Modèle rédaction', 'Modèle relecture']
 # Lecture de page en échec : message court de l'outil (depuis la v2.8) ou objet d'erreur de l'ancien outil.
 ECHEC_LECTURE = re.compile(r'^\s*(Page inaccessible|Ce lien est un fichier|There was an error)|^\s*\[?\s*\{\s*\\*"error', re.I)
 CONTENEUR_POSTGRES = os.environ.get('LOUPE_CONTENEUR_POSTGRES', 'loupe-postgres')
 ENV_POSTGRES = RACINE / '.env'
 CONFIG = json.loads((RACINE / 'loupe/config/modeles.json').read_text(encoding='utf-8'))
+# Tarifs de modèles retirés de la liste blanche, gardés pour chiffrer les anciennes exécutions (jamais autorisés).
+TARIFS_HISTORIQUES = {'gpt-5-mini': {'entree': 0.25, 'entree_cache': 0.025, 'sortie': 2.00}}
 # Anglicismes courants dans des notes produit, quand un terme français existe (détection indicative).
 ANGLICISMES = ['onboarding', 'churn', 'upsell', 'upselling', 'cross-sell', 'fulfilment', 'fulfillment', 'batching', 'data-driven',
                'dashboard', 'workflow', 'template', 'templates', 'checklist', 'feedback', 'reporting', 'packaging', 'marketplace',
@@ -177,7 +180,7 @@ def consommation(runs):
             bilan['appels_estimes'] += 0 if reel.get('promptTokens') else 1
             bilan['entree'] += entree
             bilan['sortie'] += sortie
-            tarif = CONFIG['modeles'].get(modele)
+            tarif = CONFIG['modeles'].get(modele) or TARIFS_HISTORIQUES.get(modele)
             if tarif:
                 bilan['modeles'].add(modele)
                 bilan['cout'] += (entree * tarif['entree'] + sortie * tarif['sortie']) / 1e6
@@ -212,8 +215,9 @@ def resumer(detail):
              'contexte': bool(str(formulaire.get('contexte') or '').strip()),
              'analyse_id': (json_du_noeud(runs, 'Créer analyse') or {}).get('id'),
              'modele': config.get('modele_redaction') or 'gpt-5-mini',
+             'exploration': config.get('modele_exploration') or 'gpt-5-mini',
              'statut': '?', 'pages': [], 'duree_s': None, 'heures': None, 'heures_brutes': None, 'tours': None,
-             'avertissements': [], 'pistes_signalees': [], 'regenerees': 0, 'anglicismes': [], 'piste_retenue': None}
+             'avertissements': [], 'pistes_signalees': [], 'regenerees': 0, 'anglicismes': [], 'piste_retenue': None, 'relecture': None, 'verification': None, 'calcul_duree': None}
 
     # L'agent s'appelle « Agent exploration » depuis la v2.8, « Agent teardown » dans les exécutions antérieures.
     agent = json_du_noeud(runs, 'Agent exploration') or json_du_noeud(runs, 'Agent teardown') or {}
@@ -233,6 +237,10 @@ def resumer(detail):
         ligne['pages'].append(('✗ ' if echec else '') + (urllib.parse.urlparse(url).path or '/'))
 
     finale = json_du_noeud(runs, 'Analyse finale') or {}
+    # Statut de la relecture : enregistré par « Analyse finale » depuis la v2.9.2 ; avant, une sortie en erreur
+    # de « Relecture critique » signale un échec, et une sortie valide une relecture effectuée.
+    relecture = json_du_noeud(runs, 'Relecture critique')
+    ligne['relecture'] = finale.get('relecture') or (None if relecture is None else ('echec' if 'error' in relecture or not relecture.get('output') else 'effectuee'))
     for piste in finale.get('pistes_signalees') or []:
         suite = ' → ' + piste['nouveau_titre'] if piste.get('nouveau_titre') else ''
         ligne['pistes_signalees'].append('%s (%s)%s' % (piste.get('titre'), piste.get('action'), suite))
@@ -247,6 +255,12 @@ def resumer(detail):
     ligne['tours'] = (duree.get('tentatives_pow') or 1) - 1 if duree else None
     termes = [a.get('terme') for a in (duree.get('avertissements') or []) if isinstance(a, dict)]
     ligne['avertissements'] = list(dict.fromkeys(t for t in termes if t))
+    # Contrôles en échec : signalés par un avertissement explicite (ou, dans les anciennes exécutions, par l'erreur du nœud).
+    verification = json_du_noeud(runs, 'Vérifier termes réglementaires') or {}
+    if 'vérification des termes non effectuée' in ligne['avertissements'] or verification.get('erreur_verification') or 'error' in verification:
+        ligne['verification'] = 'echec'
+    if any(t.startswith('calcul de la durée non effectué') for t in ligne['avertissements']) or premiere.get('erreur_duree') or 'error' in premiere:
+        ligne['calcul_duree'] = 'echec'
     ligne['anglicismes'] = anglicismes(finale.get('output') or agent.get('output') or {}, proof_of_work)
 
     bilan = consommation(runs)
@@ -306,17 +320,18 @@ def heures(valeur):
 def afficher(lignes):
     colonnes = [('Entreprise', lambda l: l['entreprise'] + (' *' if l['contexte'] else '')),
                 ('Exéc.', lambda l: l['execution']),
+                ('Exploration', lambda l: l['exploration']),
                 ('Rédaction', lambda l: l['modele']),
                 ('Statut', lambda l: l['statut']),
                 ('Pages', lambda l: '%d lues, %d en échec' % (len([p for p in l['pages'] if not p.startswith('✗')]), len([p for p in l['pages'] if p.startswith('✗')]))),
                 ('Entrée', lambda l: l['tokens_entree'] if l['appels'] else '—'),
                 ('Coût', lambda l: ('≥ ' if l['cout_estime'] else '') + ('%.3f $' % l['cout']).replace('.', ',') if l['appels'] else '—'),
                 ('Durée', lambda l: '%s s' % l['duree_s'] if l['duree_s'] is not None else '—'),
-                ('PoW brut', lambda l: heures(l['heures_brutes'])),
-                ('PoW final', lambda l: heures(l['heures'])),
+                ('PoW brut', lambda l: 'échec' if l['calcul_duree'] == 'echec' else heures(l['heures_brutes'])),
+                ('PoW final', lambda l: 'échec' if l['calcul_duree'] == 'echec' else heures(l['heures'])),
                 ('Tours', lambda l: l['tours'] if l['tours'] is not None else '—'),
-                ('Pistes régén.', lambda l: l['regenerees']),
-                ('Avert.', lambda l: len(l['avertissements'])),
+                ('Pistes régén.', lambda l: 'échec' if l['relecture'] == 'echec' else l['regenerees']),
+                ('Avert.', lambda l: 'échec' if l['verification'] == 'echec' else len(l['avertissements'])),
                 ('Anglic.', lambda l: len(l['anglicismes']))]
     tableau = [[titre for titre, _ in colonnes]] + [[str(valeur(l)) for _, valeur in colonnes] for l in lignes]
     largeurs = [max(len(rangee[i]) for rangee in tableau) for i in range(len(colonnes))]
@@ -328,14 +343,14 @@ def afficher(lignes):
     print('\n* analyse lancée avec un contexte')
     print('≥ coût minimal : au moins un appel sans tokens rapportés par OpenAI, estimé par n8n sans les tokens de raisonnement\n')
     for l in lignes:
-        print('%s — %s (exécution %s)' % (l['entreprise'], l['modele'], l['execution']))
+        print('%s — exploration %s, rédaction %s (exécution %s)' % (l['entreprise'], l['exploration'], l['modele'], l['execution']))
         print('  pages lues       : ' + (' · '.join(l['pages']) or '—'))
         if l['appels']:
             print('  tokens           : %d en entrée, %d en sortie, sur %d appels dont %d estimés' % (l['tokens_entree'], l['tokens_sortie'], l['appels'], l['appels_estimes']))
         if l['modeles_inconnus']:
             print('  modèles sans tarif : ' + ', '.join(l['modeles_inconnus']))
         print('  avertissements   : ' + (' · '.join(l['avertissements']) or 'aucun'))
-        print('  pistes signalées : ' + (' · '.join(l['pistes_signalees']) or 'aucune'))
+        print('  pistes signalées : ' + ('relecture non effectuée' if l['relecture'] == 'echec' else (' · '.join(l['pistes_signalees']) or 'aucune')))
         print('  piste retenue    : ' + (l['piste_retenue'] or '—'))
         print('  anglicismes      : ' + (', '.join(l['anglicismes']) or 'aucun'))
 
@@ -345,6 +360,7 @@ def main():
     parseur.add_argument('--fichier', default=str(Path(__file__).with_name('exemples.json')))
     parseur.add_argument('--seulement', action='append', default=[], help="nom d'entreprise à lancer (répétable)")
     parseur.add_argument('--modele', help='modèle de rédaction, pris dans loupe/config/modeles.json (défaut : celui du workflow)')
+    parseur.add_argument('--exploration', help="modèle d'exploration, pris dans loupe/config/modeles.json (défaut : celui du workflow)")
     parseur.add_argument('--test', action='store_true', help="URL de test du formulaire : cliquer sur « Execute workflow » avant chaque analyse")
     parseur.add_argument('--executions', help="identifiants d'exécutions existantes, séparés par des virgules (rien n'est relancé)")
     parseur.add_argument('--sans-enregistrement', action='store_true', help='ne pas écrire les tokens et le coût dans loupe.analyses')
@@ -354,6 +370,8 @@ def main():
         sys.exit('Définir LOUPE_WORKFLOW_ID : identifiant du workflow « Loupe — Analyse » dans votre instance.')
     if options.modele:
         verifier_modele(options.modele)
+    if options.exploration:
+        verifier_modele(options.exploration)
 
     if options.executions:
         lignes = [resumer(api('/executions/%s?includeData=true' % identifiant.strip(), cle)) for identifiant in options.executions.split(',')]
@@ -370,7 +388,7 @@ def main():
 
         lignes = []
         for numero, entree in enumerate(entrees, 1):
-            entree = dict(entree, modele=options.modele or '')
+            entree = dict(entree, modele=options.modele or '', exploration=options.exploration or '')
             print('[%d/%d] %s…' % (numero, len(entrees), entree['entreprise']), flush=True)
             if options.test:
                 input('      Clique sur « Execute workflow » dans n8n, puis appuie sur Entrée. ')

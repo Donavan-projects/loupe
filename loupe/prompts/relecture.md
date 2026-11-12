@@ -12,7 +12,7 @@ Pour chaque piste, indique si elle duplique l'existant et si elle ajoute un effo
 - Rédige en français.
 
 ## Format de sortie
-Réponds uniquement avec un JSON :
+Réponds uniquement avec un JSON conforme au schéma du parseur de sortie :
 - pistes : liste d'objets, un par piste, dans l'ordre reçu {
     titre (repris tel quel),
     duplique (true ou false),
